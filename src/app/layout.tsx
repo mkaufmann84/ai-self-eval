@@ -33,7 +33,7 @@ export default function RootLayout({
           themes={["light", "dark"]}
           attribute="data-theme"
         >
-          <div className="w-full bg-card h-16 flex justify-between py-2 px-8 items-center">
+          <div className="w-full bg-card h-16 flex justify-between py-2 px-[3vw] items-center">
             <h1 className="text-2xl font-bold">AI Self Eval</h1>
             <div className="flex items-center gap-4">
               <Link href="https://github.com/mkaufmann84/ai-self-eval">
@@ -42,7 +42,7 @@ export default function RootLayout({
               <ChangeThemeButton />
             </div>
           </div>
-          {children}
+          <div className="pt-10 px-[8vw]">{children}</div>
         </ThemeProvider>
       </body>
     </html>
