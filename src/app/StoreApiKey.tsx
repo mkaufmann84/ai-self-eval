@@ -21,10 +21,13 @@ type FormSchema = z.infer<typeof formSchema>;
 
 export default function StoreApiKey() {
   const [visible, setVisible] = React.useState(false);
-  const form = useForm<FormSchema>({ resolver: zodResolver(formSchema), defaultValues: { api_key: Cookies.get(COOKIES.OPENAI_API_KEY) }});
+  const form = useForm<FormSchema>({
+    resolver: zodResolver(formSchema),
+    defaultValues: { api_key: Cookies.get(COOKIES.OPENAI_API_KEY) },
+  });
   const onSubmit = (data: FormSchema) => {
     const res = Cookies.set(COOKIES.OPENAI_API_KEY, data.api_key);
-    console.log(data, res, typeof res);
+    form.reset(data);
   };
   return (
     <Form {...form}>
@@ -54,7 +57,7 @@ export default function StoreApiKey() {
                   <Input
                     type={visible ? "text" : "password"}
                     placeholder="sk-"
-                    className="min-w-[30rem] rounded-l-none"
+                    className="min-w-[31rem] rounded-l-none"
                     {...field}
                   />
                   <FormMessage />
@@ -62,8 +65,15 @@ export default function StoreApiKey() {
               )}
             />
           </div>
-          <Button type="submit" onClick={() => console.log("clicking")}>
-            Update
+          <Button
+            type="submit"
+            className={`transition duration-300 ${
+              form.formState.isDirty
+                ? "bg-primary"
+                : "bg-background border-2 border-input text-gray-500"
+            }`}
+          >
+            {form.formState.isDirty ? "Update" : "Updated"}
           </Button>
         </div>
       </form>
