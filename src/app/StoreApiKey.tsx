@@ -34,7 +34,7 @@ export default function StoreApiKey() {
       <form onSubmit={form.handleSubmit(onSubmit)}>
         <h1 className="text-2xl">Open API Key</h1>
         <h5 className="text-sm text-gray-500">
-          Your API key is only stored in the browser.
+          Your API key is only stored locally in your browser.
         </h5>
         <div className="flex gap-2">
           <div className="flex">

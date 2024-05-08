@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "./ThemeProvider";
 import ChangeThemeButton from "./_components/ChangeTheme";
 import { FaGithub } from "react-icons/fa";
 import Link from "next/link";
