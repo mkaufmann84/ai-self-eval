@@ -4,7 +4,9 @@ import React, {
   Dispatch,
   SetStateAction,
   useCallback,
+  useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -36,184 +38,178 @@ import { Textarea } from "@/components/ui/textarea";
 import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { v4 as uuidv4 } from "uuid";
 import { promptSystemAnalysis, messageScore, validateAndConvert } from "./nlp";
-const formSchema = z.object({
+import test from "node:test";
+import { CacheManager, testMemo } from "./lodash";
+
+interface InputContext {
+  cM: CacheManager;
+  summary: ResponseSummary;
+  setSummary: Dispatch<SetStateAction<ResponseSummary>>;
+}
+
+const InputContext = React.createContext<InputContext | undefined>(undefined);
+
+function useInputContext() {
+  const context = useContext(InputContext);
+  if (context === undefined) {
+    throw new Error("useAppContext must be used within a AppContextProvider");
+  }
+  return context;
+}
+
+const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
   num_responses: z.coerce.number().positive().int(),
 });
-type FormSchema = z.infer<typeof formSchema>;
+export type InputForm = z.infer<typeof inputForm>;
 
 export default function Main() {
+  const cacheManagerRef = useRef<CacheManager>(new CacheManager());
+  const [summary, setSummary] = useState<ResponseSummary>({
+    num_responses: 0,
+    num_generated: 0,
+    num_graded: 0,
+    num_rubric: 0,
+  });
+
+  useEffect(() => {
+    const cacheManager = cacheManagerRef.current;
+    return () => {
+      cacheManager.resetAllCaches();
+    };
+  }, []);
   const [state, setState] = React.useState("");
   const handleResize = (event: any) => {
     const textarea = event.target;
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
   };
-  const form = useForm<FormSchema>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<InputForm>({
+    resolver: zodResolver(inputForm),
     defaultValues: { prompt: "", num_responses: 1 },
   });
   const [submitted, setSubmitted] = useState<null | {
-    formSchema: FormSchema;
+    inputForm: InputForm;
     id: string;
   }>(null);
-  const handleSubmit = (data: FormSchema) => {
-    setSubmitted({ formSchema: data, id: uuidv4() });
+  const handleSubmit = (data: InputForm) => {
+    const inputSubmissionId = uuidv4();
+    setSubmitted({ inputForm: data, id: inputSubmissionId });
+    cacheManagerRef.current.cacheHandleInputSubmit(
+      inputSubmissionId,
+      data,
+      setSummary
+    );
   };
-
+  useEffect(() => {
+    console.log("Main rendered");
+  }, []);
   return (
-    <div>
-      <nav className="flex items-center gap-4 flex-wrap py-6">
-        <Button>History</Button>
-      </nav>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleSubmit)}>
-          <div>
-            <FormField
-              control={form.control}
-              name="prompt"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xl">Prompt</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={2}
-                      placeholder="Instructions..."
-                      className="resize-none border rounded px-4 py-2 min-h-[3rem] max-h-[9rem] overflow w-full border-input"
-                      {...field}
-                      onChange={(event: any) => {
-                        handleResize(event);
-                        field.onChange(event);
-                      }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-          <div>
-            <Label className="text-xl">Options</Label>
-            <div className="flex gap-4">
+    <InputContext.Provider
+      value={{ cM: cacheManagerRef.current, summary, setSummary }}
+    >
+      <div>
+        <nav className="flex items-center gap-4 flex-wrap py-6">
+          <Button>History</Button>
+        </nav>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)}>
+            <div>
               <FormField
                 control={form.control}
-                name="model"
+                name="prompt"
                 render={({ field }) => (
-                  <FormItem className="space-y-0">
-                    <FormLabel>Model</FormLabel>
-                    <Select onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-36">
-                          <SelectValue placeholder="Select" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                        <SelectItem value="gpt-3.5-turbo">
-                          GPT-3.5 turbo
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="num_responses"
-                render={({ field }) => (
-                  <FormItem className="space-y-0">
-                    <FormLabel>Number of responses</FormLabel>
+                  <FormItem>
+                    <FormLabel className="text-xl">Prompt</FormLabel>
                     <FormControl>
-                      <Input placeholder="3" {...field} />
+                      <Textarea
+                        rows={2}
+                        placeholder="Instructions..."
+                        className="resize-none border rounded px-4 py-2 min-h-[3rem] max-h-[9rem] overflow w-full border-input"
+                        {...field}
+                        onChange={(event: any) => {
+                          handleResize(event);
+                          field.onChange(event);
+                        }}
+                      />
                     </FormControl>
-                    <FormDescription />
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
-          </div>
-          <Button type="submit">Submit</Button>
-        </form>
-      </Form>
-      <div>
-        {submitted && (
-          /* I can change thetype of this */
-          <ResponseParent
-            input_form={submitted.formSchema}
-            id={submitted.id}
-          ></ResponseParent>
-        )}
+            <div>
+              <Label className="text-xl">Options</Label>
+              <div className="flex gap-4">
+                <FormField
+                  control={form.control}
+                  name="model"
+                  render={({ field }) => (
+                    <FormItem className="space-y-0">
+                      <FormLabel>Model</FormLabel>
+                      <Select onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger className="w-36">
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="gpt-4-turbo">
+                            GPT-4 turbo
+                          </SelectItem>
+                          <SelectItem value="gpt-3.5-turbo">
+                            GPT-3.5 turbo
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="num_responses"
+                  render={({ field }) => (
+                    <FormItem className="space-y-0">
+                      <FormLabel>Number of responses</FormLabel>
+                      <FormControl>
+                        <Input placeholder="3" {...field} />
+                      </FormControl>
+                      <FormDescription />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+            <Button type="submit">Submit</Button>
+          </form>
+        </Form>
+        <div>
+          {submitted && (
+            /* I can change thetype of this */
+            <ResponseParent input_form={submitted.inputForm}></ResponseParent>
+          )}
+        </div>
       </div>
-    </div>
+    </InputContext.Provider>
   );
 }
-interface ResponseSummary {
+export interface ResponseSummary {
   num_responses: number;
   num_generated: number;
   num_graded: number;
   num_rubric: number;
 }
 interface ResponseParentProps {
-  input_form: FormSchema;
-  id: string;
+  input_form: InputForm;
 }
-type RubricRef = { promise: Promise<string>; settled: boolean } | undefined;
+export type RubricRef =
+  | { promise: Promise<string>; settled: boolean }
+  | undefined;
 
-const RP = ({ input_form, id }: ResponseParentProps) => {
-  console.log("rendering parent", id);
-  const responseRefs = useRef<ResponseData[]>([]);
-  const [summary, setSummary] = useState<ResponseSummary>({
-    num_responses: input_form?.num_responses ?? 0,
-    num_generated: 0,
-    num_graded: 0,
-    num_rubric: 0,
-  });
-  const rubricRef = useRef<RubricRef>();
-  useEffect(() => {
-    const run = async () => {
-      console.log("running");
-      rubricRef.current = {
-        promise: createRubric(input_form.prompt, input_form.model),
-        settled: false,
-      };
-      rubricRef.current.promise.then((rubric: string) => {
-        rubricRef.current!.settled = true;
-        setSummary((prev) => {
-          return { ...prev, num_rubric: 1 };
-        });
-      });
-    };
-    setSummary({
-      num_responses: input_form.num_responses,
-      num_generated: 0,
-      num_graded: 0,
-      num_rubric: 0,
-    });
-    run();
-    for (
-      let i = responseRefs.current.length;
-      i < input_form.num_responses;
-      i++
-    ) {
-      const response = {
-        id: uuidv4(),
-        response: "",
-        finished_response: false,
-        analysis: "",
-        finished_analysis: false,
-        score: null,
-      };
-      responseRefs.current.push(response);
-    }
-    responseRefs.current.sort((a, b) => {
-      if (a.score === null || b.score === null) {
-        return a.id < b.id ? -1 : 1;
-      }
-      return a.score - b.score;
-    });
-  }, []);
+const RP = ({ input_form }: ResponseParentProps) => {
+  const { cM, summary, setSummary } = useInputContext();
 
   //in order to trigger a re-render, the child component will use the setSummary.
   //I'd rather have the values be inferred though. Maybe have a useCallback()() that recalculates the summary.
@@ -222,9 +218,9 @@ const RP = ({ input_form, id }: ResponseParentProps) => {
       num_responses: 0,
       num_generated: 0,
       num_graded: 0,
-      num_rubric: rubricRef.current?.settled ? 1 : 0,
+      num_rubric: cM.rubricRef?.settled ? 1 : 0,
     };
-    const new_summary = responseRefs.current.reduce((prev, curr) => {
+    const new_summary = cM.responseRefs.reduce((prev, curr) => {
       prev.num_responses += 1;
       if (curr.finished_response) {
         prev.num_generated += 1;
@@ -245,7 +241,7 @@ const RP = ({ input_form, id }: ResponseParentProps) => {
   return (
     <div>
       {JSON.stringify(summary)}
-      {responseRefs.current.map((response) => {
+      {cM.responseRefs.map((response) => {
         console.log("mapping    " + response.id);
         return (
           <Response
@@ -253,7 +249,6 @@ const RP = ({ input_form, id }: ResponseParentProps) => {
             prompt={input_form.prompt}
             model={input_form.model}
             data={response}
-            rubricRef={rubricRef}
             triggerUpdate={triggerUpdate}
           ></Response>
         );
@@ -263,7 +258,7 @@ const RP = ({ input_form, id }: ResponseParentProps) => {
 };
 const ResponseParent = React.memo(RP);
 
-interface ResponseData {
+export interface ResponseData {
   id: string;
   response: string;
   finished_response: boolean;
@@ -276,18 +271,17 @@ const R = ({
   prompt,
   model,
   data,
-  rubricRef,
   triggerUpdate,
 }: {
   prompt: string;
   model: string;
   data: ResponseData;
-  rubricRef: React.MutableRefObject<RubricRef>;
   triggerUpdate: () => void;
 }) => {
   const [text, setText] = React.useState("");
   const [analysis, setAnalysis] = React.useState("");
   const [score, setScore] = React.useState<number | null>(null);
+  const { cM, summary, setSummary } = useInputContext();
   useEffect(() => {
     const render = async () => {
       console.log("starting child");
@@ -299,6 +293,7 @@ const R = ({
         },
         { idempotencyKey: data.id }
       );
+
       for await (const chunk of response_stream) {
         if (chunk.choices[0].finish_reason === "stop") {
           console.log("STOPIG");
@@ -312,7 +307,7 @@ const R = ({
       data.finished_response = true;
       triggerUpdate();
 
-      const rubric = (await rubricRef.current?.promise) ?? "";
+      const rubric = (await cM.rubricRef?.promise) ?? "";
 
       const analysis_messages: ChatCompletionMessageParam[] = [
         { role: "system", content: promptSystemAnalysis(rubric) },
