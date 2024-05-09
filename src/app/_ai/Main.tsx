@@ -31,15 +31,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { z } from "zod";
-import { set, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { v4 as uuidv4 } from "uuid";
-import { promptSystemAnalysis, messageScore, validateAndConvert } from "./nlp";
-import test from "node:test";
 import { CacheManager } from "./lodash";
+import ReactMarkdown from "react-markdown";
 
 interface InputContext {
   cM: CacheManager;
@@ -303,15 +301,25 @@ const R = ({
   }, []);
 
   return (
-    <div className="border-red-300 border-2 p-4">
-      <h1>Response</h1>
-      <pre>{text}</pre>
-      <div className="w-full h-2 my-20 bg-slate-500 "></div>
-      <h1>Analysis</h1>
-      <pre>{analysis}</pre>
-      <div className="w-full h-2 my-20 bg-slate-500 "></div>
-      <h1>Score</h1>
-      <pre>{score}</pre>
+    <div className="border-red-300 border-2 p-4 grid grid-cols-3 *:border-r-2 *:border-red-500">
+      <div>
+        <h1>Response</h1>
+        <p className="prose">
+          <ReactMarkdown>{text}</ReactMarkdown>
+        </p>
+      </div>
+      <div>
+        <div className=""></div>
+        <h1>Analysis</h1>
+        <p className="prose">
+          <ReactMarkdown>{analysis}</ReactMarkdown>
+        </p>
+      </div>
+      <div>
+        <h1>Score</h1>
+        <p>{score}</p>
+      </div>
+      <p className="prose">{score}</p>
     </div>
   );
 };
