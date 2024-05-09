@@ -1,5 +1,7 @@
 import type { Config } from "tailwindcss";
 import { fontFamily } from "tailwindcss/defaultTheme";
+import { CustomThemeConfig } from "tailwindcss/types/config";
+import defaultTheme from "tailwindcss/defaultTheme";
 const config = {
   darkMode: ["class"],
   content: [
@@ -79,6 +81,18 @@ const config = {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
       },
+      typography: (theme: Partial<CustomThemeConfig>) => ({
+        invert: {
+          css: {
+            "background-color": "var(--card)",
+            color: "var(--card-foreground)",
+            pre: {
+              "background-color": "var(--background)",
+            },
+            // Add other element styles as needed
+          },
+        },
+      }),
     },
   },
   plugins: [require("tailwindcss-animate"), require("@tailwindcss/typography")],

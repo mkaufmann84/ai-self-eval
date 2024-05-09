@@ -39,6 +39,7 @@ import { v4 as uuidv4 } from "uuid";
 import { CacheManager } from "./lodash";
 import ReactMarkdown from "react-markdown";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { useTheme } from "next-themes";
 
 interface InputContext {
   cM: React.MutableRefObject<CacheManager>;
@@ -125,7 +126,7 @@ export default function Main() {
           <Button>History</Button>
         </nav>
         <InputForm handleSubmit={handleSubmit} />
-        <div>
+        <div className="pb-8">
           {submitted && (
             <>
               {JSON.stringify(summary)}
@@ -154,7 +155,11 @@ const RP = ({ input_form }: ResponseParentProps) => {
   const { cM } = useInputContext();
 
   return (
-    <div>
+    <div className="last:border-b-2 last:rounded-lg last:border-input">
+      <div className="grid grid-cols-[50%_50%] bg-card py-4 border-2 border-input border-b-0 rounded-t-lg">
+        <h1 className="px-4 text-2xl border-r-2 border-input">Response</h1>
+        <h1 className="px-4 text-2xl ">Analysis</h1>
+      </div>
       {cM.current.responseRefs.map((response) => {
         return (
           <Response
@@ -185,6 +190,22 @@ export const sortResponseData = (a: ResponseData, b: ResponseData) => {
   return b.score - a.score;
 };
 
+function calculateColor(value: number) {
+  let r = (100 - value) * 2.0; // calculate red value (inverse of value)
+  let g = value * 2.0; // calculate green value
+  let b = 0; // blue value is set to 0 for simplicity
+
+  r = Math.round(r);
+  g = Math.round(g);
+
+  // Convert each color component to a hexadecimal string and pad it if necessary
+  let hexR = r.toString(16).padStart(2, "0");
+  let hexG = g.toString(16).padStart(2, "0");
+  let hexB = b.toString(16).padStart(2, "0");
+
+  return `#${hexR}${hexG}${hexB}`;
+}
+
 const R = ({
   prompt,
   model,
@@ -210,26 +231,40 @@ const R = ({
       triggerUpdate
     );
   }, []);
-
+  const { resolvedTheme } = useTheme();
+  const styleObj =
+    score !== null
+      ? { color: calculateColor(score), borderColor: calculateColor(score) }
+      : {};
   return (
-    <div className="border-red-300 max-h-[33vh] border-2 grid grid-cols-[45%_45%_10%] py-4 *:border-r-2 *:border-red-500">
-      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
-        <h1>Response</h1>
-        <p className="prose">
+    <div className="relative border-input bg-card max-h-[40vh] border-2 border-b-0 grid grid-cols-[50%_50%] py-8 *:border-input">
+      <ScrollArea className="max-h-[calc(40vh-3rem)] overflow-auto border-r-2 px-4">
+        <p
+          className={`prose ${
+            resolvedTheme === "light" ? "prose" : "prose-invert"
+          }`}
+        >
           <ReactMarkdown>{text}</ReactMarkdown>
         </p>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
-      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
-        <h1>Analysis</h1>
-        <p className="prose">
+      <ScrollArea className="max-h-[calc(40vh-3rem)] overflow-auto px-4">
+        <p
+          className={`prose ${
+            resolvedTheme === "light" ? "prose" : "prose-invert"
+          }`}
+        >
           <ReactMarkdown>{analysis}</ReactMarkdown>
         </p>
       </ScrollArea>
-      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
-        <h1>Score</h1>
-        <p>{score}</p>
-      </ScrollArea>
+      <div className="absolute right-2 top-1 text-xl font-bold">
+        <div
+          className={`w-12 h-12 border-[1px] border-foreground flex justify-center items-center rounded-full bg-card`}
+          style={styleObj}
+        >
+          <h1>{score === null ? "--" : score}</h1>
+        </div>
+      </div>
     </div>
   );
 };
@@ -255,7 +290,7 @@ function InputForm({
   const form = useForm<InputForm>({
     resolver: zodResolver(inputForm),
     defaultValues: {
-      prompt: "Code me a function that does a react animation",
+      prompt: "Who is the greatest basketball player of all time?",
       num_responses: 20,
       model: "gpt-3.5-turbo",
     },
