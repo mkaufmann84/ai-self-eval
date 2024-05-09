@@ -7,9 +7,11 @@ import Main from "./_ai/Main";
 
 export default function Home() {
   return (
-    <div className="h-[200vh]">
-      <HowToUse />
-      <StoreApiKey />
+    <div>
+      {/*       <HowToUse /> */}
+      <div className="px-4">
+        <StoreApiKey />
+      </div>
       <Main />
     </div>
   );
