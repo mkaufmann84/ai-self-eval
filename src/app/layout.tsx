@@ -42,7 +42,7 @@ export default function RootLayout({
               <ChangeThemeButton />
             </div>
           </div>
-          <div className="pt-10 px-[8vw]">{children}</div>
+          <div className="pt-10 sm:px-[8vw] px-[2vw]">{children}</div>
         </ThemeProvider>
       </body>
     </html>

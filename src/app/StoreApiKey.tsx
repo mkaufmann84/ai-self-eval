@@ -36,8 +36,8 @@ export default function StoreApiKey() {
         <h5 className="text-sm text-gray-500">
           Your API key is only stored locally in your browser.
         </h5>
-        <div className="flex gap-2">
-          <div className="flex">
+        <div className="flex gap-2 flex-col sm:flex-row">
+          <div className="flex ">
             <Button
               size={"icon"}
               className="rounded-r-none bg-card border-input border-2 border-r-0"

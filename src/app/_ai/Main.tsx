@@ -123,13 +123,13 @@ export default function Main() {
     <InputContext.Provider value={{ cM: cacheManagerRef, triggerUpdate }}>
       <div>
         <nav className="flex items-center gap-4 flex-wrap py-6">
-          <Button>History</Button>
+          {/* <Button>History</Button> */}
         </nav>
         <InputForm handleSubmit={handleSubmit} />
         <div className="pb-8 ">
           {submitted && (
             <>
-              <div className="py-3 flex flex-col gap-2 text-xl px-4">
+              <div className="py-3 flex flex-col gap-2 sm:text-xl px-4 text-md">
                 <SummaryStat
                   label="Responses Generated"
                   num={summary.num_generated}
@@ -397,7 +397,7 @@ function InputForm({
             )}
           />
         </div>
-        <div className="flex gap-4 items-end py-3">
+        <div className="flex gap-4 py-3 flex-col sm:flex-row items-start sm:items-end ">
           <FormField
             control={form.control}
             name="model"
