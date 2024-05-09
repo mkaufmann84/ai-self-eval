@@ -40,6 +40,7 @@ import { CacheManager } from "./lodash";
 import ReactMarkdown from "react-markdown";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useTheme } from "next-themes";
+import ErrorDialog from "../_components/ErrorDialog";
 
 interface InputContext {
   cM: React.MutableRefObject<CacheManager>;
@@ -57,7 +58,12 @@ function useInputContext() {
 }
 
 export default function Main() {
-  const cacheManagerRef = useRef<CacheManager>(new CacheManager());
+  const [dialogMessage, setDialogMessage] = useState<string | undefined>(
+    undefined
+  );
+  const cacheManagerRef = useRef<CacheManager>(
+    new CacheManager(setDialogMessage)
+  );
   const [summary, setSummary] = useState<ResponseSummary>({
     num_responses: 0,
     num_generated: 0,
@@ -112,16 +118,22 @@ export default function Main() {
       num_graded: 0,
       num_rubric: 0,
     });
-    cacheManagerRef.current.cacheHandleInputSubmit(
-      inputSubmissionId,
-      data,
-      setSummary
-    );
+    try {
+      cacheManagerRef.current.cacheHandleInputSubmit(
+        inputSubmissionId,
+        data,
+        setSummary
+      );
+    } catch (e) {
+      console.log("caught");
+      //console.error(e);
+    }
   };
 
   return (
     <InputContext.Provider value={{ cM: cacheManagerRef, triggerUpdate }}>
       <div>
+        <ErrorDialog message={dialogMessage} setMessage={setDialogMessage} />
         <nav className="flex items-center gap-4 flex-wrap py-6">
           {/* <Button>History</Button> */}
         </nav>
@@ -169,7 +181,7 @@ function SummaryStat({
       <h5 className="flex gap-4">
         {label}:
         <svg
-          className="animate-spin -ml-1 mr-3 h-5 w-5 text-white"
+          className="animate-spin -ml-1 mr-3 h-5 w-5 text-foreground"
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"

@@ -23,9 +23,13 @@ export class CacheManager {
   public cacheRunChild: ReturnType<typeof memoize>;
   public rubricRef: RubricRef;
   public responseRefs: ResponseData[] = [];
-  constructor() {
+  public setError: React.Dispatch<React.SetStateAction<string | undefined>>;
+  constructor(
+    setError: React.Dispatch<React.SetStateAction<string | undefined>>
+  ) {
     this.cacheHandleInputSubmit = memoize(this.handleInputSubmit);
     this.cacheRunChild = memoize(this.runChild);
+    this.setError = setError;
   }
   /** Called when a form is submitted. */
   public handleInputSubmit(
@@ -33,45 +37,52 @@ export class CacheManager {
     input_form: InputForm,
     setSummary: React.Dispatch<React.SetStateAction<ResponseSummary>>
   ) {
-    this.responseRefs = [];
-    this.rubricRef = {
-      promise: createRubric(
-        input_form.prompt,
-        input_form.model,
-        input_form.analysis_temperature
-      ),
-      settled: false,
-    };
-    this.rubricRef.promise.then((rubric: string) => {
-      this.rubricRef!.settled = true;
-      setSummary((prev) => {
-        return { ...prev, num_rubric: 1 };
-      });
-    });
-
-    setSummary({
-      num_responses: input_form.num_responses,
-      num_generated: 0,
-      num_graded: 0,
-      num_rubric: 0,
-    });
-
-    for (
-      let i = 0; //let i = responseRefs.current.length;
-      i < input_form.num_responses;
-      i++
-    ) {
-      const response = {
-        id: uuidv4(),
-        response: "",
-        finished_response: false,
-        analysis: "",
-        finished_analysis: false,
-        score: null,
+    try {
+      this.responseRefs = [];
+      this.rubricRef = {
+        promise: createRubric(
+          input_form.prompt,
+          input_form.model,
+          input_form.analysis_temperature
+        ),
+        settled: false,
       };
-      this.responseRefs.push(response);
+      this.rubricRef.promise.then((rubric: string) => {
+        this.rubricRef!.settled = true;
+        setSummary((prev) => {
+          return { ...prev, num_rubric: 1 };
+        });
+      });
+      this.rubricRef.promise.catch((error) => {
+        this.setError("Error: " + error);
+      });
+
+      setSummary({
+        num_responses: input_form.num_responses,
+        num_generated: 0,
+        num_graded: 0,
+        num_rubric: 0,
+      });
+
+      for (
+        let i = 0; //let i = responseRefs.current.length;
+        i < input_form.num_responses;
+        i++
+      ) {
+        const response = {
+          id: uuidv4(),
+          response: "",
+          finished_response: false,
+          analysis: "",
+          finished_analysis: false,
+          score: null,
+        };
+        this.responseRefs.push(response);
+      }
+      this.responseRefs.sort(sortResponseData);
+    } catch (error) {
+      this.setError("Error: " + error);
     }
-    this.responseRefs.sort(sortResponseData);
   }
 
   public async runChild(
@@ -86,60 +97,64 @@ export class CacheManager {
     setScore: React.Dispatch<React.SetStateAction<number>>,
     triggerUpdate: () => void
   ) {
-    const response_stream = await getOpenAI().chat.completions.create({
-      model: model,
-      messages: [{ role: "user", content: prompt }],
-      stream: true,
-    });
-    for await (const chunk of response_stream) {
-      if (chunk.choices[0].finish_reason === "stop") {
-        break;
-      }
-      responseRef.response =
-        responseRef.response + chunk.choices[0]?.delta?.content ?? "";
-      setText(responseRef.response);
-    }
-    responseRef.finished_response = true;
-    triggerUpdate();
-
-    const rubric = (await this.rubricRef?.promise) ?? "";
-    const analysis_messages: ChatCompletionMessageParam[] = [
-      { role: "system", content: promptSystemAnalysis(rubric) },
-      { role: "user", content: responseRef.response },
-    ];
-    const analysis_stream = await getOpenAI().chat.completions.create({
-      model: model,
-      messages: analysis_messages,
-      stream: true,
-    });
-    for await (const chunk of analysis_stream) {
-      if (chunk.choices[0].finish_reason === "stop") {
-        break;
-      }
-      responseRef.analysis =
-        responseRef.analysis + chunk.choices[0]?.delta?.content ?? "";
-    }
-    responseRef.finished_analysis = true;
-    setAnalysis(responseRef.analysis);
-    triggerUpdate();
-
-    const score_text = await getOpenAI().chat.completions.create({
-      model: model,
-      messages: messageScore(analysis_messages, responseRef.analysis),
-      response_format: { type: "json_object" },
-    });
-    let score;
     try {
-      const score_json = JSON.parse(
-        score_text.choices[0].message.content ?? "{}"
-      );
-      score = validateAndConvert(score_json.score);
-      responseRef.score = score;
-    } catch {
-      responseRef.score = 0;
-    } finally {
-      setScore(responseRef.score ?? 0);
+      const response_stream = await getOpenAI().chat.completions.create({
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        stream: true,
+      });
+      for await (const chunk of response_stream) {
+        if (chunk.choices[0].finish_reason === "stop") {
+          break;
+        }
+        responseRef.response =
+          responseRef.response + chunk.choices[0]?.delta?.content ?? "";
+        setText(responseRef.response);
+      }
+      responseRef.finished_response = true;
       triggerUpdate();
+
+      const rubric = (await this.rubricRef?.promise) ?? "";
+      const analysis_messages: ChatCompletionMessageParam[] = [
+        { role: "system", content: promptSystemAnalysis(rubric) },
+        { role: "user", content: responseRef.response },
+      ];
+      const analysis_stream = await getOpenAI().chat.completions.create({
+        model: model,
+        messages: analysis_messages,
+        stream: true,
+      });
+      for await (const chunk of analysis_stream) {
+        if (chunk.choices[0].finish_reason === "stop") {
+          break;
+        }
+        responseRef.analysis =
+          responseRef.analysis + chunk.choices[0]?.delta?.content ?? "";
+      }
+      responseRef.finished_analysis = true;
+      setAnalysis(responseRef.analysis);
+      triggerUpdate();
+
+      const score_text = await getOpenAI().chat.completions.create({
+        model: model,
+        messages: messageScore(analysis_messages, responseRef.analysis),
+        response_format: { type: "json_object" },
+      });
+      let score;
+      try {
+        const score_json = JSON.parse(
+          score_text.choices[0].message.content ?? "{}"
+        );
+        score = validateAndConvert(score_json.score);
+        responseRef.score = score;
+      } catch {
+        responseRef.score = 0;
+      } finally {
+        setScore(responseRef.score ?? 0);
+        triggerUpdate();
+      }
+    } catch (error) {
+      this.setError("Error: " + error);
     }
   }
 
