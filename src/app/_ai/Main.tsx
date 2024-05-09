@@ -229,6 +229,8 @@ const RP = ({ input_form }: ResponseParentProps) => {
             key={response.id}
             prompt={input_form.prompt}
             model={input_form.model}
+            response_temperature={input_form.response_temperature}
+            analysis_temperature={input_form.analysis_temperature}
             data={response}
           ></Response>
         );
@@ -272,10 +274,14 @@ function calculateColor(value: number) {
 const R = ({
   prompt,
   model,
+  response_temperature,
+  analysis_temperature,
   data,
 }: {
   prompt: string;
   model: string;
+  response_temperature: number;
+  analysis_temperature: number;
   data: ResponseData;
 }) => {
   const [text, setText] = React.useState("");
@@ -287,6 +293,8 @@ const R = ({
       data.id,
       prompt,
       model,
+      response_temperature,
+      analysis_temperature,
       data,
       setText,
       setAnalysis,
@@ -337,6 +345,8 @@ const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
   num_responses: z.coerce.number().positive().int(),
+  response_temperature: z.coerce.number().min(0).max(2),
+  analysis_temperature: z.coerce.number().min(0).max(2),
 });
 export type InputForm = z.infer<typeof inputForm>;
 
@@ -356,11 +366,13 @@ function InputForm({
       prompt: "Who is the greatest basketball player of all time?",
       num_responses: 20,
       model: "gpt-3.5-turbo",
+      response_temperature: 1.6,
+      analysis_temperature: 0.25,
     },
   });
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleSubmit)}>
+      <form onSubmit={form.handleSubmit(handleSubmit)} className="px-4 py-4">
         <div>
           <FormField
             control={form.control}
@@ -385,51 +397,77 @@ function InputForm({
             )}
           />
         </div>
-        <div>
-          <Label className="text-xl">Options</Label>
-          <div className="flex gap-4">
-            <FormField
-              control={form.control}
-              name="model"
-              render={({ field }) => (
-                <FormItem className="space-y-0">
-                  <FormLabel>Model</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="w-36">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">
-                        GPT-3.5 turbo
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="num_responses"
-              render={({ field }) => (
-                <FormItem className="space-y-0">
-                  <FormLabel>Number of responses</FormLabel>
+        <div className="flex gap-4 items-end py-3">
+          <FormField
+            control={form.control}
+            name="model"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel className="text-xl font-normal">Model</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                   <FormControl>
-                    <Input placeholder="3" {...field} />
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
                   </FormControl>
-                  <FormDescription />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+                  <SelectContent>
+                    <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
+                    <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="num_responses"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel className="text-xl font-normal">
+                  Number of responses
+                </FormLabel>
+                <FormControl>
+                  <Input placeholder="3" {...field} />
+                </FormControl>
+                <FormMessage className="absolute" />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="response_temperature"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel className="text-xl font-normal">
+                  Response temperature
+                </FormLabel>
+                <FormControl>
+                  <Input placeholder="3" {...field} />
+                </FormControl>
+                <FormMessage className="absolute" />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="analysis_temperature"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel className="text-xl font-normal">
+                  Analysis Temperature
+                </FormLabel>
+                <FormControl>
+                  <Input placeholder="3" {...field} />
+                </FormControl>
+                <FormMessage className="absolute" />
+              </FormItem>
+            )}
+          />
+          <Button type="submit">Submit</Button>
         </div>
-        <Button type="submit">Submit</Button>
       </form>
     </Form>
   );

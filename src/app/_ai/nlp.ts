@@ -76,10 +76,15 @@ export function evalStepsMessages(prompt: string, eval_criteria: string) {
   return messages;
 }
 
-export async function createRubric(input_prompt: string, model: string) {
+export async function createRubric(
+  input_prompt: string,
+  model: string,
+  analysis_temperature: number
+) {
   const eval_criteria = await getOpenAI().chat.completions.create({
     model: model,
     messages: evalCriteriaMessages(input_prompt),
+    temperature: analysis_temperature,
   });
   const eval_steps = await getOpenAI().chat.completions.create({
     model: model,
@@ -87,6 +92,7 @@ export async function createRubric(input_prompt: string, model: string) {
       input_prompt,
       eval_criteria.choices[0].message.content ?? ""
     ),
+    temperature: analysis_temperature,
   });
   const formatted = `Evaluation Criteria:
   ${eval_criteria.choices[0].message.content ?? ""}

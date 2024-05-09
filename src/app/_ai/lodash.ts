@@ -35,7 +35,11 @@ export class CacheManager {
   ) {
     this.responseRefs = [];
     this.rubricRef = {
-      promise: createRubric(input_form.prompt, input_form.model),
+      promise: createRubric(
+        input_form.prompt,
+        input_form.model,
+        input_form.analysis_temperature
+      ),
       settled: false,
     };
     this.rubricRef.promise.then((rubric: string) => {
@@ -74,6 +78,8 @@ export class CacheManager {
     key: string,
     prompt: string,
     model: string,
+    response_temperature: number,
+    analysis_temperature: number,
     responseRef: ResponseData,
     setText: React.Dispatch<React.SetStateAction<string>>,
     setAnalysis: React.Dispatch<React.SetStateAction<string>>,
