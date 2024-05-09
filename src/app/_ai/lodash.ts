@@ -102,6 +102,7 @@ export class CacheManager {
         model: model,
         messages: [{ role: "user", content: prompt }],
         stream: true,
+        temperature: response_temperature,
       });
       for await (const chunk of response_stream) {
         if (chunk.choices[0].finish_reason === "stop") {
@@ -123,6 +124,7 @@ export class CacheManager {
         model: model,
         messages: analysis_messages,
         stream: true,
+        temperature: analysis_temperature,
       });
       for await (const chunk of analysis_stream) {
         if (chunk.choices[0].finish_reason === "stop") {
@@ -139,6 +141,7 @@ export class CacheManager {
         model: model,
         messages: messageScore(analysis_messages, responseRef.analysis),
         response_format: { type: "json_object" },
+        temperature: analysis_temperature,
       });
       let score;
       try {
