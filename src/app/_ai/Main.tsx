@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { v4 as uuidv4 } from "uuid";
 import { CacheManager } from "./lodash";
 import ReactMarkdown from "react-markdown";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 
 interface InputContext {
   cM: React.MutableRefObject<CacheManager>;
@@ -53,13 +54,6 @@ function useInputContext() {
   }
   return context;
 }
-
-const inputForm = z.object({
-  prompt: z.string().min(1, "Prompt is required"),
-  model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
-  num_responses: z.coerce.number().positive().int(),
-});
-export type InputForm = z.infer<typeof inputForm>;
 
 export default function Main() {
   const cacheManagerRef = useRef<CacheManager>(new CacheManager());
@@ -157,7 +151,6 @@ export type RubricRef =
   | undefined;
 
 const RP = ({ input_form }: ResponseParentProps) => {
-  console.log("RP render");
   const { cM } = useInputContext();
 
   return (
@@ -219,28 +212,35 @@ const R = ({
   }, []);
 
   return (
-    <div className="border-red-300 border-2 p-4 grid grid-cols-3 *:border-r-2 *:border-red-500">
-      <div>
+    <div className="border-red-300 max-h-[33vh] border-2 grid grid-cols-[45%_45%_10%] py-4 *:border-r-2 *:border-red-500">
+      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
         <h1>Response</h1>
         <p className="prose">
           <ReactMarkdown>{text}</ReactMarkdown>
         </p>
-      </div>
-      <div>
-        <div className=""></div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
         <h1>Analysis</h1>
         <p className="prose">
           <ReactMarkdown>{analysis}</ReactMarkdown>
         </p>
-      </div>
-      <div>
+      </ScrollArea>
+      <ScrollArea className="max-h-[calc(33vh-1rem)] overflow-auto px-4">
         <h1>Score</h1>
         <p>{score}</p>
-      </div>
+      </ScrollArea>
     </div>
   );
 };
 const Response = React.memo(R);
+
+const inputForm = z.object({
+  prompt: z.string().min(1, "Prompt is required"),
+  model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
+  num_responses: z.coerce.number().positive().int(),
+});
+export type InputForm = z.infer<typeof inputForm>;
 
 function InputForm({
   handleSubmit,
@@ -254,7 +254,11 @@ function InputForm({
   };
   const form = useForm<InputForm>({
     resolver: zodResolver(inputForm),
-    defaultValues: { prompt: "", num_responses: 1 },
+    defaultValues: {
+      prompt: "Code me a function that does a react animation",
+      num_responses: 20,
+      model: "gpt-3.5-turbo",
+    },
   });
   return (
     <Form {...form}>
@@ -292,7 +296,10 @@ function InputForm({
               render={({ field }) => (
                 <FormItem className="space-y-0">
                   <FormLabel>Model</FormLabel>
-                  <Select onValueChange={field.onChange}>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
                     <FormControl>
                       <SelectTrigger className="w-36">
                         <SelectValue placeholder="Select" />
@@ -329,6 +336,7 @@ function InputForm({
     </Form>
   );
 }
+
 /** The way I'm going to do this is after they submit the form, it renders x components and generates a rubroc.
  *  Each component has a state, and the parent will contain an array of these states
  * each component generates its responses. Then awaits rubric, and then will start the analysis.
