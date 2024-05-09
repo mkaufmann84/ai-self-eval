@@ -42,7 +42,7 @@ export function messageScore(
 }
 
 export function evalCriteriaMessages(input_prompt: string) {
-  const formatted = `Imagine you are a professor. You need a way to grade your students' responses to an input prompt.
+  const formatted = `Imagine you are a helpful assistant. You need a way to grade your responses to an input prompt.
   Your task is to create an evaluation criteria for a response based on an input prompt.
   This is like a rubric because it will help grade a response to the input prompt.
   The critera will be used to grade a response on a scale of 0-100.
@@ -58,11 +58,11 @@ export function evalCriteriaMessages(input_prompt: string) {
   return messages;
 }
 
-export function evalStepsMessages(eval_criteria: string) {
-  const formatted = `Imagine you are a professor. You need a way to grade your students' responses to an input prompt.
-  You have an evaluation criteria. However, you need the steps in order to evaluate a response.
-  Your task is to generate instructions on how to use the evaluation criteria. 
-  
+export function evalStepsMessages(prompt: string, eval_criteria: string) {
+  const formatted = `
+  Your task is to create instructions that will guide you in evaluating responses based on input propmt.
+  You are to use the input prompt, and evaluation criteria to create these instructions.
+
   Input prompt: 
   ${prompt}
 
@@ -83,7 +83,10 @@ export async function createRubric(input_prompt: string, model: string) {
   });
   const eval_steps = await getOpenAI().chat.completions.create({
     model: model,
-    messages: evalStepsMessages(eval_criteria.choices[0].message.content ?? ""),
+    messages: evalStepsMessages(
+      input_prompt,
+      eval_criteria.choices[0].message.content ?? ""
+    ),
   });
   const formatted = `Evaluation Criteria:
   ${eval_criteria.choices[0].message.content ?? ""}

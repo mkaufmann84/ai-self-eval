@@ -1,5 +1,11 @@
 import { memoize } from "lodash-es";
-import { InputForm, ResponseData, ResponseSummary, RubricRef } from "./Main";
+import {
+  InputForm,
+  ResponseData,
+  ResponseSummary,
+  RubricRef,
+  sortResponseData,
+} from "./Main";
 import {
   createRubric,
   getOpenAI,
@@ -61,12 +67,7 @@ export class CacheManager {
       };
       this.responseRefs.push(response);
     }
-    this.responseRefs.sort((a, b) => {
-      if (a.score === null || b.score === null) {
-        return a.id < b.id ? -1 : 1;
-      }
-      return a.score - b.score;
-    });
+    this.responseRefs.sort(sortResponseData);
   }
 
   public async runChild(
@@ -79,7 +80,6 @@ export class CacheManager {
     setScore: React.Dispatch<React.SetStateAction<number>>,
     triggerUpdate: () => void
   ) {
-    console.log("runChild called", key);
     const response_stream = await getOpenAI().chat.completions.create({
       model: model,
       messages: [{ role: "user", content: prompt }],
@@ -87,7 +87,6 @@ export class CacheManager {
     });
     for await (const chunk of response_stream) {
       if (chunk.choices[0].finish_reason === "stop") {
-        console.log("STOPIG");
         break;
       }
       responseRef.response =
@@ -109,7 +108,6 @@ export class CacheManager {
     });
     for await (const chunk of analysis_stream) {
       if (chunk.choices[0].finish_reason === "stop") {
-        console.log("STOPIG ANALYSIS");
         break;
       }
       responseRef.analysis =
@@ -120,7 +118,7 @@ export class CacheManager {
     triggerUpdate();
 
     const score_text = await getOpenAI().chat.completions.create({
-      model: "gpt-4-turbo-preview",
+      model: model,
       messages: messageScore(analysis_messages, responseRef.analysis),
       response_format: { type: "json_object" },
     });
