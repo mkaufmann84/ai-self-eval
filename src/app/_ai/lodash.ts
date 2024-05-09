@@ -1,16 +1,25 @@
 import { memoize } from "lodash-es";
 import { InputForm, ResponseData, ResponseSummary, RubricRef } from "./Main";
-import { createRubric } from "./nlp";
+import {
+  createRubric,
+  getOpenAI,
+  messageScore,
+  promptSystemAnalysis,
+  validateAndConvert,
+} from "./nlp";
 import { v4 as uuidv4 } from "uuid";
+import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 
 /*When I want to re-render (change ui), I use a state.  */
 
 export class CacheManager {
   public cacheHandleInputSubmit: ReturnType<typeof memoize>;
+  public cacheRunChild: ReturnType<typeof memoize>;
   public rubricRef: RubricRef;
   public responseRefs: ResponseData[] = [];
   constructor() {
     this.cacheHandleInputSubmit = memoize(this.handleInputSubmit);
+    this.cacheRunChild = memoize(this.runChild);
   }
   /** Called when a form is submitted. */
   public handleInputSubmit(
@@ -18,7 +27,7 @@ export class CacheManager {
     input_form: InputForm,
     setSummary: React.Dispatch<React.SetStateAction<ResponseSummary>>
   ) {
-    console.log("handleInputSubmit called", key, input_form);
+    this.responseRefs = [];
     this.rubricRef = {
       promise: createRubric(input_form.prompt, input_form.model),
       settled: false,
@@ -60,14 +69,84 @@ export class CacheManager {
     });
   }
 
+  public async runChild(
+    key: string,
+    prompt: string,
+    model: string,
+    responseRef: ResponseData,
+    setText: React.Dispatch<React.SetStateAction<string>>,
+    setAnalysis: React.Dispatch<React.SetStateAction<string>>,
+    setScore: React.Dispatch<React.SetStateAction<number>>,
+    triggerUpdate: () => void
+  ) {
+    console.log("runChild called", key);
+    const response_stream = await getOpenAI().chat.completions.create({
+      model: model,
+      messages: [{ role: "user", content: prompt }],
+      stream: true,
+    });
+    for await (const chunk of response_stream) {
+      if (chunk.choices[0].finish_reason === "stop") {
+        console.log("STOPIG");
+        break;
+      }
+      responseRef.response =
+        responseRef.response + chunk.choices[0]?.delta?.content ?? "";
+      setText(responseRef.response);
+    }
+    responseRef.finished_response = true;
+    triggerUpdate();
+
+    const rubric = (await this.rubricRef?.promise) ?? "";
+    const analysis_messages: ChatCompletionMessageParam[] = [
+      { role: "system", content: promptSystemAnalysis(rubric) },
+      { role: "user", content: responseRef.response },
+    ];
+    const analysis_stream = await getOpenAI().chat.completions.create({
+      model: model,
+      messages: analysis_messages,
+      stream: true,
+    });
+    for await (const chunk of analysis_stream) {
+      if (chunk.choices[0].finish_reason === "stop") {
+        console.log("STOPIG ANALYSIS");
+        break;
+      }
+      responseRef.analysis =
+        responseRef.analysis + chunk.choices[0]?.delta?.content ?? "";
+    }
+    responseRef.finished_analysis = true;
+    setAnalysis(responseRef.analysis);
+    triggerUpdate();
+
+    const score_text = await getOpenAI().chat.completions.create({
+      model: "gpt-4-turbo-preview",
+      messages: messageScore(analysis_messages, responseRef.analysis),
+      response_format: { type: "json_object" },
+    });
+    let score;
+    try {
+      const score_json = JSON.parse(
+        score_text.choices[0].message.content ?? "{}"
+      );
+      score = validateAndConvert(score_json.score);
+      responseRef.score = score;
+    } catch {
+      responseRef.score = 0;
+    } finally {
+      setScore(responseRef.score ?? 0);
+      triggerUpdate();
+    }
+  }
+
   resetAllCaches() {
+    this.responseRefs = [];
+    this.rubricRef = undefined;
     if (this.cacheHandleInputSubmit.cache.clear) {
       this.cacheHandleInputSubmit.cache.clear();
     }
+    if (this.cacheRunChild.cache.clear) {
+      this.cacheRunChild.cache.clear();
+    }
   }
 }
-
-export const testMemo = memoize((key, arg1) => {
-  console.log("testMemo called", key, arg1);
-  return null;
-});

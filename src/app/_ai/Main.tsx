@@ -39,7 +39,7 @@ import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { v4 as uuidv4 } from "uuid";
 import { promptSystemAnalysis, messageScore, validateAndConvert } from "./nlp";
 import test from "node:test";
-import { CacheManager, testMemo } from "./lodash";
+import { CacheManager } from "./lodash";
 
 interface InputContext {
   cM: CacheManager;
@@ -79,7 +79,6 @@ export default function Main() {
       cacheManager.resetAllCaches();
     };
   }, []);
-  const [state, setState] = React.useState("");
   const handleResize = (event: any) => {
     const textarea = event.target;
     textarea.style.height = "auto";
@@ -95,7 +94,14 @@ export default function Main() {
   }>(null);
   const handleSubmit = (data: InputForm) => {
     const inputSubmissionId = uuidv4();
+    cacheManagerRef.current.resetAllCaches();
     setSubmitted({ inputForm: data, id: inputSubmissionId });
+    setSummary({
+      num_responses: 0,
+      num_generated: 0,
+      num_graded: 0,
+      num_rubric: 0,
+    });
     cacheManagerRef.current.cacheHandleInputSubmit(
       inputSubmissionId,
       data,
@@ -278,85 +284,34 @@ const R = ({
   data: ResponseData;
   triggerUpdate: () => void;
 }) => {
+  console.log("rendering child");
   const [text, setText] = React.useState("");
   const [analysis, setAnalysis] = React.useState("");
   const [score, setScore] = React.useState<number | null>(null);
-  const { cM, summary, setSummary } = useInputContext();
+  const { cM } = useInputContext();
   useEffect(() => {
-    const render = async () => {
-      console.log("starting child");
-      const response_stream = await getOpenAI().chat.completions.create(
-        {
-          model: model,
-          messages: [{ role: "user", content: prompt }],
-          stream: true,
-        },
-        { idempotencyKey: data.id }
-      );
-
-      for await (const chunk of response_stream) {
-        if (chunk.choices[0].finish_reason === "stop") {
-          console.log("STOPIG");
-          break;
-        }
-        console.log(chunk.choices[0].delta.content);
-        data.response = data.response + chunk.choices[0].delta.content ?? "";
-        setText(data.response);
-      }
-      console.log("response", data.response);
-      data.finished_response = true;
-      triggerUpdate();
-
-      const rubric = (await cM.rubricRef?.promise) ?? "";
-
-      const analysis_messages: ChatCompletionMessageParam[] = [
-        { role: "system", content: promptSystemAnalysis(rubric) },
-        { role: "user", content: data.response },
-      ];
-      const analysis_stream = await getOpenAI().chat.completions.create({
-        model: model,
-        messages: analysis_messages,
-        stream: true,
-      });
-      for await (const chunk of analysis_stream) {
-        data.analysis = data.analysis + chunk.choices[0]?.delta?.content ?? "";
-      }
-      data.finished_analysis = true;
-      setAnalysis(data.analysis);
-      triggerUpdate();
-
-      const score_text = await getOpenAI().chat.completions.create({
-        model: "gpt-4-turbo-preview",
-        messages: messageScore(analysis_messages, data.analysis),
-        response_format: { type: "json_object" },
-      });
-      let score;
-      try {
-        const score_json = JSON.parse(
-          score_text.choices[0].message.content ?? "{}"
-        );
-        score = validateAndConvert(score_json.score);
-        data.score = score;
-      } catch {
-        data.score = 0;
-      } finally {
-        setScore(data.score);
-        triggerUpdate();
-      }
-    };
-    render();
+    cM.cacheRunChild(
+      data.id,
+      prompt,
+      model,
+      data,
+      setText,
+      setAnalysis,
+      setScore,
+      triggerUpdate
+    );
   }, []);
 
   return (
     <div className="border-red-300 border-2 p-4">
       <h1>Response</h1>
-      <p>{text}</p>
+      <pre>{text}</pre>
       <div className="w-full h-2 my-20 bg-slate-500 "></div>
       <h1>Analysis</h1>
-      <p>{analysis}</p>
+      <pre>{analysis}</pre>
       <div className="w-full h-2 my-20 bg-slate-500 "></div>
       <h1>Score</h1>
-      <p>{score}</p>
+      <pre>{score}</pre>
     </div>
   );
 };
