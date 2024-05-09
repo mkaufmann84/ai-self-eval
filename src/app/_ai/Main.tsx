@@ -378,7 +378,7 @@ function InputForm({
       prompt: "Who is the greatest basketball player of all time?",
       num_responses: 20,
       model: "gpt-3.5-turbo",
-      response_temperature: 1.6,
+      response_temperature: 1.2,
       analysis_temperature: 0.25,
     },
   });
