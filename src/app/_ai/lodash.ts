@@ -42,7 +42,7 @@ export class CacheManager {
       this.rubricRef = {
         promise: createRubric(
           input_form.prompt,
-          input_form.model,
+          input_form.analysis_model,
           input_form.analysis_temperature
         ),
         settled: false,
@@ -88,7 +88,8 @@ export class CacheManager {
   public async runChild(
     key: string,
     prompt: string,
-    model: string,
+    response_model: string,
+    analysis_model: string,
     response_temperature: number,
     analysis_temperature: number,
     responseRef: ResponseData,
@@ -99,7 +100,7 @@ export class CacheManager {
   ) {
     try {
       const response_stream = await getOpenAI().chat.completions.create({
-        model: model,
+        model: response_model,
         messages: [{ role: "user", content: prompt }],
         stream: true,
         temperature: response_temperature,
@@ -121,7 +122,7 @@ export class CacheManager {
         { role: "user", content: responseRef.response },
       ];
       const analysis_stream = await getOpenAI().chat.completions.create({
-        model: model,
+        model: analysis_model,
         messages: analysis_messages,
         stream: true,
         temperature: analysis_temperature,
@@ -138,7 +139,7 @@ export class CacheManager {
       triggerUpdate();
 
       const score_text = await getOpenAI().chat.completions.create({
-        model: model,
+        model: analysis_model,
         messages: messageScore(analysis_messages, responseRef.analysis),
         response_format: { type: "json_object" },
         temperature: analysis_temperature,
