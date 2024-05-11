@@ -372,7 +372,7 @@ function InputForm({
       num_responses: 20,
       response_model: "gpt-4-turbo",
       analysis_model: "gpt-3.5-turbo",
-      response_temperature: 1.6,
+      response_temperature: 1.1,
       analysis_temperature: 0.25,
     },
   });
