@@ -13,12 +13,55 @@ export const getOpenAI = () => {
   return openai;
 };
 
+export function evalCriteriaMessages(input_prompt: string) {
+  const formatted = `
+  Your task is to create an evaluation criteria for a response based on an input prompt.
+  The critera will be used to grade a response on a scale of 0-100. You should be a very harsh grader. You should focus on what they did wrong.
+
+  **The evaluation criteria is based on how well a response could answer the input prompt**
+  
+  Responses that are easy to understand provide a brief overview of the topic you are discussing. Next, break down the information into clear and concise points. Finally, encourage the other person to ask questions to clarify any confusing points.
+
+  Input prompt: 
+  ${input_prompt}
+
+  Evaluation Criteria (Rubric) for how well a response could answer the input prompt:
+  `;
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "user", content: formatted },
+  ];
+  return messages;
+}
+
+export function evalStepsMessages(prompt: string, eval_criteria: string) {
+  const formatted = `
+  Your task is to create guiding steps in evaluating responses based on input propmt.
+  You are to use the input prompt, and evaluation criteria to create these steps.
+  **The evaluation criteria is based on how well a response could answer the input prompt**
+
+  Input prompt: 
+  ${prompt}
+
+  Evaluation Criteria for a response:
+  ${eval_criteria}
+  
+  Evaluation Steps :`;
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "user", content: formatted },
+  ];
+  return messages;
+}
+
 export function promptSystemAnalysis(rubric: string) {
   const formatted = `Your task is to write an analysis on an input text using a rubric.
     You will receive a rubric to guide you. You must use the rubric.
     The rubric contains a criteria and steps you can use to evaluate the criteria.
     Please make sure you read and understand these instructions carefully. Please keep this document open while reviewing, and refer to it as needed.
-    
+    You are to be a harsh grader. You should focus on what they did wrong.
+
+    Prioritize accuracy, logical consistency, clarity, understandability in your analysis.
+
+    There should be no perfect scores because you are a harsh grader. The purpose of this is to compare responses, so you have to be nitpicky.
 
     Rubric:
     ${rubric}
@@ -37,41 +80,6 @@ export function messageScore(
       content: `Using the analysis you just did, return a JSON response that scores the input text on a scale of 0-100.
       To format, you should use the key "score" to represent the score.`,
     },
-  ];
-  return messages;
-}
-
-export function evalCriteriaMessages(input_prompt: string) {
-  const formatted = `Imagine you are a helpful assistant. You need a way to grade your responses to an input prompt.
-  Your task is to create an evaluation criteria for a response based on an input prompt.
-  This is like a rubric because it will help grade a response to the input prompt.
-  The critera will be used to grade a response on a scale of 0-100.
-
-  Input prompt: 
-  ${input_prompt}
-
-  Evaluation Criteria (Rubric) for a response:
-  `;
-  const messages: ChatCompletionMessageParam[] = [
-    { role: "user", content: formatted },
-  ];
-  return messages;
-}
-
-export function evalStepsMessages(prompt: string, eval_criteria: string) {
-  const formatted = `
-  Your task is to create instructions that will guide you in evaluating responses based on input propmt.
-  You are to use the input prompt, and evaluation criteria to create these instructions.
-
-  Input prompt: 
-  ${prompt}
-
-  Evaluation Criteria for a response:
-  ${eval_criteria}
-  
-  Evaluation Steps:`;
-  const messages: ChatCompletionMessageParam[] = [
-    { role: "user", content: formatted },
   ];
   return messages;
 }

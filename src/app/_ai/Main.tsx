@@ -239,11 +239,8 @@ const RP = ({ input_form }: ResponseParentProps) => {
         return (
           <Response
             key={response.id}
-            prompt={input_form.prompt}
-            model={input_form.model}
-            response_temperature={input_form.response_temperature}
-            analysis_temperature={input_form.analysis_temperature}
-            data={response}
+            input_form={input_form}
+            responseData={response}
           ></Response>
         );
       })}
@@ -284,17 +281,11 @@ function calculateColor(value: number) {
 }
 
 const R = ({
-  prompt,
-  model,
-  response_temperature,
-  analysis_temperature,
-  data,
+  input_form,
+  responseData,
 }: {
-  prompt: string;
-  model: string;
-  response_temperature: number;
-  analysis_temperature: number;
-  data: ResponseData;
+  input_form: InputForm;
+  responseData: ResponseData;
 }) => {
   const [text, setText] = React.useState("");
   const [analysis, setAnalysis] = React.useState("");
@@ -302,12 +293,13 @@ const R = ({
   const { cM, triggerUpdate } = useInputContext();
   useEffect(() => {
     cM.current.cacheRunChild(
-      data.id,
-      prompt,
-      model,
-      response_temperature,
-      analysis_temperature,
-      data,
+      responseData.id,
+      input_form.prompt,
+      input_form.response_model,
+      input_form.analysis_model,
+      input_form.response_temperature,
+      input_form.analysis_temperature,
+      responseData,
       setText,
       setAnalysis,
       setScore,
@@ -355,7 +347,8 @@ const Response = React.memo(R);
 
 const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
-  model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
+  response_model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
+  analysis_model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
   num_responses: z.coerce.number().positive().int(),
   response_temperature: z.coerce.number().min(0).max(2),
   analysis_temperature: z.coerce.number().min(0).max(2),
@@ -375,10 +368,11 @@ function InputForm({
   const form = useForm<InputForm>({
     resolver: zodResolver(inputForm),
     defaultValues: {
-      prompt: "Who is the greatest basketball player of all time?",
+      prompt: "You are come up with the best answer possible to my question.",
       num_responses: 20,
-      model: "gpt-3.5-turbo",
-      response_temperature: 1.2,
+      response_model: "gpt-4-turbo",
+      analysis_model: "gpt-3.5-turbo",
+      response_temperature: 1.6,
       analysis_temperature: 0.25,
     },
   });
@@ -412,10 +406,37 @@ function InputForm({
         <div className="flex gap-4 py-3 flex-col sm:flex-row items-start sm:items-end ">
           <FormField
             control={form.control}
-            name="model"
+            name="response_model"
             render={({ field }) => (
               <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">Model</FormLabel>
+                <FormLabel className="text-xl font-normal">
+                  Response Model
+                </FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-36">
+                      <SelectValue placeholder="Select" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
+                    <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="analysis_model"
+            render={({ field }) => (
+              <FormItem className="space-y-2">
+                <FormLabel className="text-xl font-normal">
+                  Analysis Model
+                </FormLabel>
                 <Select
                   onValueChange={field.onChange}
                   defaultValue={field.value}
