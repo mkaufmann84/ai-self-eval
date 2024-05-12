@@ -368,7 +368,7 @@ function InputForm({
   const form = useForm<InputForm>({
     resolver: zodResolver(inputForm),
     defaultValues: {
-      prompt: "You are come up with the best answer possible to my question.",
+      prompt: "",
       num_responses: 20,
       response_model: "gpt-4-turbo",
       analysis_model: "gpt-3.5-turbo",

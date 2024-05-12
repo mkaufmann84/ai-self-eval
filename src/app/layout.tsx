@@ -35,6 +35,9 @@ export default function RootLayout({
           <div className="w-full bg-card h-16 flex justify-between py-2 px-[3vw] items-center">
             <h1 className="text-2xl font-bold">AI Self Eval</h1>
             <div className="flex items-center gap-4">
+              <Link href="/" target="_blank">
+                New Tab
+              </Link>
               <Link href="https://github.com/mkaufmann84/ai-self-eval">
                 <FaGithub size={"32px"} />
               </Link>
