@@ -344,11 +344,11 @@ const R = ({
   );
 };
 const Response = React.memo(R);
-
+const models = z.enum(["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]);
 const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
-  response_model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
-  analysis_model: z.enum(["gpt-4-turbo", "gpt-3.5-turbo"]),
+  response_model: models,
+  analysis_model: models,
   num_responses: z.coerce.number().positive().int(),
   response_temperature: z.coerce.number().min(0).max(2),
   analysis_temperature: z.coerce.number().min(0).max(2),
@@ -370,7 +370,7 @@ function InputForm({
     defaultValues: {
       prompt: "",
       num_responses: 20,
-      response_model: "gpt-4-turbo",
+      response_model: "gpt-4o",
       analysis_model: "gpt-3.5-turbo",
       response_temperature: 1.1,
       analysis_temperature: 0.25,
@@ -422,6 +422,7 @@ function InputForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
                     <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
                   </SelectContent>
@@ -447,6 +448,7 @@ function InputForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
                     <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
                   </SelectContent>
