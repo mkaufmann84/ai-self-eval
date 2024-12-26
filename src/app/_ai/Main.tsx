@@ -377,8 +377,8 @@ function InputForm({
       num_responses: 20,
       response_model: "gpt-4o",
       analysis_model: "gpt-4o-mini",
-      response_temperature: 1.1,
-      analysis_temperature: 0.25,
+      response_temperature: 1.35,
+      analysis_temperature: 0.0,
     },
   });
   return (
