@@ -374,7 +374,7 @@ function InputForm({
     resolver: zodResolver(inputForm),
     defaultValues: {
       prompt: "",
-      num_responses: 20,
+      num_responses: 10,
       response_model: "gpt-4o",
       analysis_model: "gpt-4o-mini",
       response_temperature: 1.35,
