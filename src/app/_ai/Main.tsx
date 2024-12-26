@@ -344,7 +344,12 @@ const R = ({
   );
 };
 const Response = React.memo(R);
-const models = z.enum(["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]);
+const models = z.enum([
+  "gpt-4o",
+  "gpt-4o-mini",
+  "gpt-4-turbo",
+  "gpt-3.5-turbo",
+]);
 const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   response_model: models,
@@ -371,7 +376,7 @@ function InputForm({
       prompt: "",
       num_responses: 20,
       response_model: "gpt-4o",
-      analysis_model: "gpt-3.5-turbo",
+      analysis_model: "gpt-4o-mini",
       response_temperature: 1.1,
       analysis_temperature: 0.25,
     },
@@ -423,6 +428,7 @@ function InputForm({
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
                     <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
                   </SelectContent>
@@ -449,6 +455,7 @@ function InputForm({
                   </FormControl>
                   <SelectContent>
                     <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
                     <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
                   </SelectContent>
