@@ -345,6 +345,7 @@ const R = ({
 };
 const Response = React.memo(R);
 const models = z.enum([
+  "chatgpt-4o-latest",
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
@@ -375,9 +376,9 @@ function InputForm({
     defaultValues: {
       prompt: "",
       num_responses: 10,
-      response_model: "gpt-4o",
+      response_model: "chatgpt-4o-latest",
       analysis_model: "gpt-4o-mini",
-      response_temperature: 1.35,
+      response_temperature: 1.2,
       analysis_temperature: 0.0,
     },
   });
@@ -427,6 +428,9 @@ function InputForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="chatgpt-4o-latest">
+                      ChatGPT-4o latest
+                    </SelectItem>
                     <SelectItem value="gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
@@ -454,6 +458,9 @@ function InputForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
+                    <SelectItem value="chatgpt-4o-latest">
+                      ChatGPT-4o latest
+                    </SelectItem>
                     <SelectItem value="gpt-4o">GPT-4o</SelectItem>
                     <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
                     <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
