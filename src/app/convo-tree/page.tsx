@@ -502,7 +502,7 @@ export default function ConvoTreePage() {
     });
   }, []);
   const [showMeta, setShowMeta] = useState(true);
-  const [generatingKey, setGeneratingKey] = useState<string | null>(null);
+  const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
   const [generateModel, setGenerateModel] = useState<string>(DEFAULT_GENERATE_MODEL);
   const [generateCount, setGenerateCount] = useState<number>(1);
   const [generateTemperature, setGenerateTemperature] = useState<number>(
@@ -722,7 +722,19 @@ export default function ConvoTreePage() {
     }
 
     const generateKey = `${node.id}:${selectedOption.id}`;
-    setGeneratingKey(generateKey);
+
+    const adjustGenerating = (delta: number) => {
+      setGeneratingMap((prev) => {
+        const next = { ...prev };
+        const current = (next[generateKey] ?? 0) + delta;
+        if (current <= 0) {
+          delete next[generateKey];
+        } else {
+          next[generateKey] = current;
+        }
+        return next;
+      });
+    };
 
     try {
       const conversationMessages: ChatMessage[] = contextTurns
@@ -787,22 +799,32 @@ export default function ConvoTreePage() {
         throw new Error("Invalid message in generation");
       }
 
-      for (let i = 0; i < count; i++) {
-        const generated = await generateChatCompletion({
-          model: chosenModel,
-          messages,
-          temperature,
-        });
-        if (generated) {
-          handleAddNextTurn(node, selectedOption, generated, {
-            model: chosenModel,
-          });
-        }
-      }
+      adjustGenerating(count);
+
+      const tasks = Array.from({ length: count }, (_unused, index) =>
+        (async () => {
+          try {
+            const generated = await generateChatCompletion({
+              model: chosenModel,
+              messages,
+              temperature,
+            });
+            if (generated) {
+              handleAddNextTurn(node, selectedOption, generated, {
+                model: chosenModel,
+              });
+            }
+          } catch (error) {
+            console.error("Failed to generate response", { error, index });
+          } finally {
+            adjustGenerating(-1);
+          }
+        })()
+      );
+
+      await Promise.allSettled(tasks);
     } catch (error) {
       console.error("Failed to generate response", error);
-    } finally {
-      setGeneratingKey((current) => (current === generateKey ? null : current));
     }
   };
 
@@ -958,7 +980,7 @@ export default function ConvoTreePage() {
                 isGenerating={
                   !!(
                     step.selectedOption &&
-                    generatingKey === `${step.node.id}:${step.selectedOption.id}`
+                    generatingMap[`${step.node.id}:${step.selectedOption.id}`]
                   )
                 }
                 runCandidates={runCandidates}
