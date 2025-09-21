@@ -31,7 +31,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -134,9 +134,6 @@ export default function Main() {
     <InputContext.Provider value={{ cM: cacheManagerRef, triggerUpdate }}>
       <div>
         <ErrorDialog message={dialogMessage} setMessage={setDialogMessage} />
-        <nav className="flex items-center gap-4 flex-wrap py-6">
-          {/* <Button>History</Button> */}
-        </nav>
         <InputForm handleSubmit={handleSubmit} />
         <div className="pb-8 ">
           {submitted && (
@@ -251,6 +248,7 @@ const ResponseParent = React.memo(RP);
 
 export interface ResponseData {
   id: string;
+  response_model: z.infer<typeof models>;
   response: string;
   finished_response: boolean;
   analysis: string;
@@ -295,7 +293,6 @@ const R = ({
     cM.current.cacheRunChild(
       responseData.id,
       input_form.prompt,
-      input_form.response_model,
       input_form.analysis_model,
       input_form.response_temperature,
       input_form.analysis_temperature,
@@ -313,6 +310,9 @@ const R = ({
       : {};
   return (
     <div className="relative border-input bg-card max-h-[40vh] border-2 border-b-0 grid grid-cols-[50%_50%] py-8 *:border-input">
+      <div className="absolute left-4 top-2 text-sm font-medium text-muted-foreground">
+        {responseData.response_model}
+      </div>
       <ScrollArea className="max-h-[calc(40vh-3rem)] overflow-auto border-r-2 px-4">
         <p
           className={`prose ${
@@ -345,17 +345,23 @@ const R = ({
 };
 const Response = React.memo(R);
 const models = z.enum([
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5-chat-latest",
   "chatgpt-4o-latest",
   "gpt-4o",
   "gpt-4o-mini",
   "gpt-4-turbo",
   "gpt-3.5-turbo",
 ]);
+const responseOption = z.object({
+  response_model: models,
+  num_responses: z.coerce.number().positive().int(),
+});
 const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
-  response_model: models,
-  analysis_model: models,
-  num_responses: z.coerce.number().positive().int(),
+  response_options: z.array(responseOption).min(1),
+  analysis_model: models.or(z.literal("skip")),
   response_temperature: z.coerce.number().min(0).max(2),
   analysis_temperature: z.coerce.number().min(0).max(2),
 });
@@ -375,12 +381,17 @@ function InputForm({
     resolver: zodResolver(inputForm),
     defaultValues: {
       prompt: "",
-      num_responses: 10,
-      response_model: "chatgpt-4o-latest",
+      response_options: [
+        { response_model: "gpt-5", num_responses: 5 },
+      ],
       analysis_model: "gpt-4o-mini",
       response_temperature: 1.2,
       analysis_temperature: 0.0,
     },
+  });
+  const { fields, append, remove } = useFieldArray({
+    control: form.control,
+    name: "response_options",
   });
   return (
     <Form {...form}>
@@ -409,113 +420,162 @@ function InputForm({
             )}
           />
         </div>
-        <div className="flex gap-4 py-3 flex-col sm:flex-row items-start sm:items-end ">
-          <FormField
-            control={form.control}
-            name="response_model"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">
-                  Response Model
-                </FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
+        <div className="flex gap-4 py-3 flex-col">
+          <div className="space-y-2">
+            <FormLabel className="text-xl font-normal">Response Models</FormLabel>
+            <div className="border border-input rounded-lg overflow-hidden">
+              <div className="grid grid-cols-[1fr_150px_80px] items-center bg-muted px-4 py-2 text-sm font-medium uppercase tracking-wide">
+                <span>Model</span>
+                <span className="text-right"># Responses</span>
+                <span className="text-center">Actions</span>
+              </div>
+              {fields.map((field, index) => (
+                <div
+                  key={field.id}
+                  className="grid grid-cols-[1fr_150px_80px] items-center gap-2 border-t border-input px-4 py-3"
                 >
+                  <FormField
+                    control={form.control}
+                    name={`response_options.${index}.response_model`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <Select
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="gpt-5">GPT-5</SelectItem>
+                            <SelectItem value="gpt-5-mini">GPT-5 mini</SelectItem>
+                            <SelectItem value="gpt-5-chat-latest">
+                              GPT-5 chat latest
+                            </SelectItem>
+                            <SelectItem value="chatgpt-4o-latest">
+                              ChatGPT-4o latest
+                            </SelectItem>
+                            <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                            <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
+                            <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
+                            <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name={`response_options.${index}.num_responses`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Input type="number" min={1} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="flex justify-center">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => remove(index)}
+                      disabled={fields.length === 1}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  append({ response_model: "gpt-4o", num_responses: 5 })
+                }
+              >
+                Add model
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-end gap-4">
+            <FormField
+              control={form.control}
+              name="analysis_model"
+              render={({ field }) => (
+                <FormItem className="flex flex-col gap-1">
+                  <FormLabel className="text-xl font-normal">
+                    Analysis Model
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    defaultValue={field.value}
+                  >
+                    <FormControl>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Select" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="gpt-5">GPT-5</SelectItem>
+                      <SelectItem value="gpt-5-mini">GPT-5 mini</SelectItem>
+                      <SelectItem value="gpt-5-chat-latest">
+                        GPT-5 chat latest
+                      </SelectItem>
+                      <SelectItem value="chatgpt-4o-latest">
+                        ChatGPT-4o latest
+                      </SelectItem>
+                      <SelectItem value="gpt-4o">GPT-4o</SelectItem>
+                      <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
+                      <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
+                      <SelectItem value="skip">Skip analysis</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="response_temperature"
+              render={({ field }) => (
+                <FormItem className="flex flex-col gap-1">
+                  <FormLabel className="text-xl font-normal">
+                    Response temperature
+                  </FormLabel>
                   <FormControl>
-                    <SelectTrigger className="w-36">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
+                    <Input placeholder="1" {...field} />
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="chatgpt-4o-latest">
-                      ChatGPT-4o latest
-                    </SelectItem>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
-                    <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                    <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="analysis_model"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">
-                  Analysis Model
-                </FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="analysis_temperature"
+              render={({ field }) => (
+                <FormItem className="flex flex-col gap-1">
+                  <FormLabel className="text-xl font-normal">
+                    Analysis Temperature
+                  </FormLabel>
                   <FormControl>
-                    <SelectTrigger className="w-36">
-                      <SelectValue placeholder="Select" />
-                    </SelectTrigger>
+                    <Input placeholder="0" {...field} />
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="chatgpt-4o-latest">
-                      ChatGPT-4o latest
-                    </SelectItem>
-                    <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                    <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
-                    <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                    <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="num_responses"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">
-                  Number of responses
-                </FormLabel>
-                <FormControl>
-                  <Input placeholder="3" {...field} />
-                </FormControl>
-                <FormMessage className="absolute" />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="response_temperature"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">
-                  Response temperature
-                </FormLabel>
-                <FormControl>
-                  <Input placeholder="3" {...field} />
-                </FormControl>
-                <FormMessage className="absolute" />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="analysis_temperature"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <FormLabel className="text-xl font-normal">
-                  Analysis Temperature
-                </FormLabel>
-                <FormControl>
-                  <Input placeholder="3" {...field} />
-                </FormControl>
-                <FormMessage className="absolute" />
-              </FormItem>
-            )}
-          />
-          <Button type="submit">Submit</Button>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button type="submit" className="mt-6">
+              Submit
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

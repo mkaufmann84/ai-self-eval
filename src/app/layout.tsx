@@ -4,9 +4,9 @@ import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "./ThemeProvider";
 import ChangeThemeButton from "./_components/ChangeTheme";
+import TopNav from "./_components/TopNav";
 import { FaGithub } from "react-icons/fa";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
@@ -33,7 +33,10 @@ export default function RootLayout({
           attribute="data-theme"
         >
           <div className="w-full bg-card h-16 flex justify-between py-2 px-[3vw] items-center">
-            <h1 className="text-2xl font-bold">AI Self Eval</h1>
+            <div className="flex items-center gap-6">
+              <h1 className="text-2xl font-bold">AI Self Eval</h1>
+              <TopNav />
+            </div>
             <div className="flex items-center gap-4">
               <Link href="/" target="_blank">
                 New Tab

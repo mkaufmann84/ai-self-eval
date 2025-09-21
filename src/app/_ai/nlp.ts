@@ -5,6 +5,10 @@ import { COOKIES } from "@/constants";
 import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { z } from "zod";
 
+const normalizedTemperature = (model: string, temperature: number) => {
+  return model.startsWith("gpt-5") ? 1 : temperature;
+};
+
 export const getOpenAI = () => {
   const openai = new OpenAI({
     apiKey: Cookies.get(COOKIES.OPENAI_API_KEY),
@@ -84,10 +88,14 @@ export async function createRubric(
   model: string,
   analysis_temperature: number
 ) {
+  if (model === "skip") {
+    return "";
+  }
+  const safeTemperature = normalizedTemperature(model, analysis_temperature);
   const eval_criteria = await getOpenAI().chat.completions.create({
     model: model,
     messages: evalCriteriaMessages(input_prompt),
-    temperature: analysis_temperature,
+    temperature: safeTemperature,
   });
   const eval_steps = await getOpenAI().chat.completions.create({
     model: model,
@@ -95,7 +103,7 @@ export async function createRubric(
       input_prompt,
       eval_criteria.choices[0].message.content ?? ""
     ),
-    temperature: analysis_temperature,
+    temperature: safeTemperature,
   });
   const formatted = `Evaluation Criteria:
   ${eval_criteria.choices[0].message.content ?? ""}

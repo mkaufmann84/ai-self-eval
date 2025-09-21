@@ -18,6 +18,10 @@ import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 
 /*When I want to re-render (change ui), I use a state.  */
 
+const normalizedTemperature = (model: string, temperature: number) => {
+  return model.startsWith("gpt-5") ? 1 : temperature;
+};
+
 export class CacheManager {
   public cacheHandleInputSubmit: ReturnType<typeof memoize>;
   public cacheRunChild: ReturnType<typeof memoize>;
@@ -39,46 +43,57 @@ export class CacheManager {
   ) {
     try {
       this.responseRefs = [];
-      this.rubricRef = {
-        promise: createRubric(
-          input_form.prompt,
-          input_form.analysis_model,
-          input_form.analysis_temperature
-        ),
-        settled: false,
-      };
-      this.rubricRef.promise.then((rubric: string) => {
-        this.rubricRef!.settled = true;
-        setSummary((prev) => {
-          return { ...prev, num_rubric: 1 };
+      if (input_form.analysis_model === "skip") {
+        this.rubricRef = {
+          promise: Promise.resolve(""),
+          settled: true,
+        };
+      } else {
+        this.rubricRef = {
+          promise: createRubric(
+            input_form.prompt,
+            input_form.analysis_model,
+            input_form.analysis_temperature
+          ),
+          settled: false,
+        };
+        this.rubricRef.promise.then((rubric: string) => {
+          this.rubricRef!.settled = true;
+          setSummary((prev) => {
+            return { ...prev, num_rubric: 1 };
+          });
         });
-      });
-      this.rubricRef.promise.catch((error) => {
-        this.setError("Error: " + error);
-      });
+        this.rubricRef.promise.catch((error) => {
+          this.setError("Error: " + error);
+        });
+      }
+
+      const totalResponses = input_form.response_options.reduce(
+        (sum, option) => sum + option.num_responses,
+        0
+      );
 
       setSummary({
-        num_responses: input_form.num_responses,
+        num_responses: totalResponses,
         num_generated: 0,
         num_graded: 0,
-        num_rubric: 0,
+        num_rubric: this.rubricRef?.settled ? 1 : 0,
       });
 
-      for (
-        let i = 0; //let i = responseRefs.current.length;
-        i < input_form.num_responses;
-        i++
-      ) {
-        const response = {
-          id: uuidv4(),
-          response: "",
-          finished_response: false,
-          analysis: "",
-          finished_analysis: false,
-          score: null,
-        };
-        this.responseRefs.push(response);
-      }
+      input_form.response_options.forEach((option) => {
+        for (let i = 0; i < option.num_responses; i++) {
+          const response = {
+            id: uuidv4(),
+            response_model: option.response_model,
+            response: "",
+            finished_response: false,
+            analysis: "",
+            finished_analysis: false,
+            score: null,
+          };
+          this.responseRefs.push(response);
+        }
+      });
       this.responseRefs.sort(sortResponseData);
     } catch (error) {
       this.setError("Error: " + error);
@@ -88,7 +103,6 @@ export class CacheManager {
   public async runChild(
     key: string,
     prompt: string,
-    response_model: string,
     analysis_model: string,
     response_temperature: number,
     analysis_temperature: number,
@@ -99,11 +113,15 @@ export class CacheManager {
     triggerUpdate: () => void
   ) {
     try {
+      const safeResponseTemperature = normalizedTemperature(
+        responseRef.response_model,
+        response_temperature
+      );
       const response_stream = await getOpenAI().chat.completions.create({
-        model: response_model,
+        model: responseRef.response_model,
         messages: [{ role: "user", content: prompt }],
         stream: true,
-        temperature: response_temperature,
+        temperature: safeResponseTemperature,
       });
       for await (const chunk of response_stream) {
         if (chunk.choices[0].finish_reason === "stop") {
@@ -116,16 +134,30 @@ export class CacheManager {
       responseRef.finished_response = true;
       triggerUpdate();
 
+      if (analysis_model === "skip") {
+        responseRef.analysis = "Analysis skipped.";
+        responseRef.finished_analysis = true;
+        responseRef.score = 100;
+        setAnalysis(responseRef.analysis);
+        setScore(responseRef.score);
+        triggerUpdate();
+        return;
+      }
+
       const rubric = (await this.rubricRef?.promise) ?? "";
       const analysis_messages: ChatCompletionMessageParam[] = [
         { role: "system", content: promptSystemAnalysis(rubric) },
         { role: "user", content: responseRef.response },
       ];
+      const safeAnalysisTemperature = normalizedTemperature(
+        analysis_model,
+        analysis_temperature
+      );
       const analysis_stream = await getOpenAI().chat.completions.create({
         model: analysis_model,
         messages: analysis_messages,
         stream: true,
-        temperature: analysis_temperature,
+        temperature: safeAnalysisTemperature,
       });
       for await (const chunk of analysis_stream) {
         if (chunk.choices[0].finish_reason === "stop") {
@@ -142,7 +174,7 @@ export class CacheManager {
         model: analysis_model,
         messages: messageScore(analysis_messages, responseRef.analysis),
         response_format: { type: "json_object" },
-        temperature: analysis_temperature,
+        temperature: safeAnalysisTemperature,
       });
       let score;
       try {
