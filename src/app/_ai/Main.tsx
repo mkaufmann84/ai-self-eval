@@ -10,7 +10,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { createRubric, getOpenAI } from "./nlp";
+import { createRubric } from "./nlp";
 import Cookies from "js-cookie";
 import { COOKIES } from "@/constants";
 import { Label } from "@/components/ui/label";
@@ -353,6 +353,8 @@ const models = z.enum([
   "gpt-4o-mini",
   "gpt-4-turbo",
   "gpt-3.5-turbo",
+  "claude-4-sonnet-20241022",
+  "claude-4-opus-20241022",
 ]);
 const responseOption = z.object({
   response_model: models,

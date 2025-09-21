@@ -8,13 +8,14 @@ import {
 } from "./Main";
 import {
   createRubric,
-  getOpenAI,
+  generateChatCompletion,
   messageScore,
   promptSystemAnalysis,
+  streamChatCompletion,
   validateAndConvert,
+  type ChatMessage,
 } from "./nlp";
 import { v4 as uuidv4 } from "uuid";
-import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 
 /*When I want to re-render (change ui), I use a state.  */
 
@@ -117,18 +118,13 @@ export class CacheManager {
         responseRef.response_model,
         response_temperature
       );
-      const response_stream = await getOpenAI().chat.completions.create({
+      const responseStreamResult = await streamChatCompletion({
         model: responseRef.response_model,
         messages: [{ role: "user", content: prompt }],
-        stream: true,
         temperature: safeResponseTemperature,
       });
-      for await (const chunk of response_stream) {
-        if (chunk.choices[0].finish_reason === "stop") {
-          break;
-        }
-        responseRef.response =
-          responseRef.response + chunk.choices[0]?.delta?.content ?? "";
+      for await (const delta of responseStreamResult.textStream) {
+        responseRef.response = `${responseRef.response}${delta}`;
         setText(responseRef.response);
       }
       responseRef.finished_response = true;
@@ -145,7 +141,7 @@ export class CacheManager {
       }
 
       const rubric = (await this.rubricRef?.promise) ?? "";
-      const analysis_messages: ChatCompletionMessageParam[] = [
+      const analysis_messages: ChatMessage[] = [
         { role: "system", content: promptSystemAnalysis(rubric) },
         { role: "user", content: responseRef.response },
       ];
@@ -153,34 +149,26 @@ export class CacheManager {
         analysis_model,
         analysis_temperature
       );
-      const analysis_stream = await getOpenAI().chat.completions.create({
+      const analysisStreamResult = await streamChatCompletion({
         model: analysis_model,
         messages: analysis_messages,
-        stream: true,
         temperature: safeAnalysisTemperature,
       });
-      for await (const chunk of analysis_stream) {
-        if (chunk.choices[0].finish_reason === "stop") {
-          break;
-        }
-        responseRef.analysis =
-          responseRef.analysis + chunk.choices[0]?.delta?.content ?? "";
+      for await (const delta of analysisStreamResult.textStream) {
+        responseRef.analysis = `${responseRef.analysis}${delta}`;
       }
       responseRef.finished_analysis = true;
       setAnalysis(responseRef.analysis);
       triggerUpdate();
 
-      const score_text = await getOpenAI().chat.completions.create({
+      const scoreResult = await generateChatCompletion({
         model: analysis_model,
         messages: messageScore(analysis_messages, responseRef.analysis),
-        response_format: { type: "json_object" },
         temperature: safeAnalysisTemperature,
       });
       let score;
       try {
-        const score_json = JSON.parse(
-          score_text.choices[0].message.content ?? "{}"
-        );
+        const score_json = JSON.parse(scoreResult ?? "{}");
         score = validateAndConvert(score_json.score);
         responseRef.score = score;
       } catch {

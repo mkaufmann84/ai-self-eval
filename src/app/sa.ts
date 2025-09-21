@@ -1,26 +1,16 @@
 "use server";
 
-import { streamText } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { createStreamableValue } from "ai/rsc";
+import OpenAI from "openai";
+
+const serverOpenAI = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function generate(input: string) {
   "use server";
 
-  const stream = createStreamableValue("");
+  const completion = await serverOpenAI.chat.completions.create({
+    model: "gpt-3.5-turbo",
+    messages: [{ role: "user", content: input }],
+  });
 
-  (async () => {
-    const { textStream } = await streamText({
-      model: openai("gpt-3.5-turbo"),
-      prompt: input,
-    });
-
-    for await (const delta of textStream) {
-      stream.update(delta);
-    }
-
-    stream.done();
-  })();
-
-  return { output: stream.value };
+  return { output: completion.choices?.[0]?.message?.content ?? "" };
 }

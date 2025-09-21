@@ -1,21 +1,189 @@
 "use client";
+
 import OpenAI from "openai";
 import Cookies from "js-cookie";
-import { COOKIES } from "@/constants";
-import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { z } from "zod";
+import { COOKIES } from "@/constants";
+import { anthropicComplete } from "./server/anthropic";
 
-const normalizedTemperature = (model: string, temperature: number) => {
-  return model.startsWith("gpt-5") ? 1 : temperature;
+const normalizedTemperature = (model: string, temperature: number) =>
+  model.startsWith("gpt-5") ? 1 : temperature;
+
+export type ChatMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
 };
 
-export const getOpenAI = () => {
-  const openai = new OpenAI({
-    apiKey: Cookies.get(COOKIES.OPENAI_API_KEY),
-    dangerouslyAllowBrowser: true,
+type Provider = "openai" | "anthropic";
+
+type ConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export interface ChatCompletionParams {
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
+}
+
+export interface StreamResult {
+  textStream: AsyncIterable<string>;
+}
+
+const OPENAI_BROWSER_OPTIONS = { dangerouslyAllowBrowser: true } as const;
+
+let cachedOpenAIClient: { apiKey: string; client: OpenAI } | null = null;
+
+function getOpenAIClient(): OpenAI {
+  const apiKey = Cookies.get(COOKIES.OPENAI_API_KEY) ?? "";
+  if (!apiKey) {
+    throw new Error("Missing OpenAI API key. Store it on the settings page first.");
+  }
+  if (!cachedOpenAIClient || cachedOpenAIClient.apiKey !== apiKey) {
+    cachedOpenAIClient = {
+      apiKey,
+      client: new OpenAI({ apiKey, ...OPENAI_BROWSER_OPTIONS }),
+    };
+  }
+  return cachedOpenAIClient.client;
+}
+
+function resolveProvider(model: string): Provider {
+  return model.startsWith("claude") ? "anthropic" : "openai";
+}
+
+function splitSystemMessages(messages: ChatMessage[]): {
+  system?: string;
+  conversation: ConversationTurn[];
+} {
+  const systemParts: string[] = [];
+  const conversation: ConversationTurn[] = [];
+
+  messages.forEach((message, index) => {
+    if (!message || !message.role) {
+      throw new Error(`Invalid message at index ${index}`);
+    }
+    if (message.role === "system") {
+      if (message.content.trim()) {
+        systemParts.push(message.content.trim());
+      }
+      return;
+    }
+    if (message.role !== "user" && message.role !== "assistant") {
+      throw new Error(`Unsupported role: ${message.role}`);
+    }
+    conversation.push({
+      role: message.role,
+      content: message.content,
+    });
   });
-  return openai;
-};
+
+  return {
+    system: systemParts.length ? systemParts.join("\n\n") : undefined,
+    conversation,
+  };
+}
+
+async function completeWithOpenAI({
+  model,
+  messages,
+  temperature,
+  maxTokens,
+}: ChatCompletionParams): Promise<string> {
+  const client = getOpenAIClient();
+  const { system, conversation } = splitSystemMessages(messages);
+  const payload = [
+    ...(system ? [{ role: "system", content: system }] : []),
+    ...conversation.map((turn) => ({ role: turn.role, content: turn.content })),
+  ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+  const response = await client.chat.completions.create({
+    model,
+    temperature,
+    max_tokens: maxTokens,
+    messages: payload,
+  });
+
+  return response.choices?.[0]?.message?.content?.trim() ?? "";
+}
+
+async function completeWithAnthropic({
+  model,
+  messages,
+  temperature,
+  maxTokens,
+}: ChatCompletionParams): Promise<string> {
+  const { system, conversation } = splitSystemMessages(messages);
+  return anthropicComplete({
+    model,
+    system,
+    temperature,
+    maxTokens,
+    conversation,
+  });
+}
+
+export async function generateChatCompletion(params: ChatCompletionParams): Promise<string> {
+  const provider = resolveProvider(params.model);
+  if (provider === "openai") {
+    return completeWithOpenAI(params);
+  }
+  return completeWithAnthropic(params);
+}
+
+export async function streamChatCompletion(
+  params: ChatCompletionParams
+): Promise<StreamResult> {
+  const provider = resolveProvider(params.model);
+  if (provider === "openai") {
+    const client = getOpenAIClient();
+    const { system, conversation } = splitSystemMessages(params.messages);
+    const payload = [
+      ...(system ? [{ role: "system", content: system }] : []),
+      ...conversation.map((turn) => ({ role: turn.role, content: turn.content })),
+    ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+    const stream = await client.chat.completions.create({
+      model: params.model,
+      messages: payload,
+      temperature: params.temperature,
+      max_tokens: params.maxTokens,
+      stream: true,
+    });
+
+    const iterator = (async function* () {
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (!delta) {
+          continue;
+        }
+        if (Array.isArray(delta)) {
+          for (const part of delta) {
+            if (part) {
+              yield part;
+            }
+          }
+        } else {
+          yield delta;
+        }
+      }
+    })();
+
+    return { textStream: iterator };
+  }
+
+  // Anthropic streaming requires a different surface. Until we wire up their
+  // event stream, fall back to a single completion emitted as one chunk so the
+  // rest of the UI can keep polling the same interface.
+  const text = await completeWithAnthropic(params);
+  const iterator = (async function* () {
+    if (text) {
+      yield text;
+    }
+  })();
+  return { textStream: iterator };
+}
 
 export function evalCriteriaMessages(input_prompt: string) {
   const formatted = `
@@ -29,7 +197,7 @@ export function evalCriteriaMessages(input_prompt: string) {
 
   Evaluation Criteria (Rubric) for how well a response could answer the input prompt:
   `;
-  const messages: ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     { role: "user", content: formatted },
   ];
   return messages;
@@ -48,7 +216,7 @@ export function evalStepsMessages(prompt: string, eval_criteria: string) {
   ${eval_criteria}
   
   Evaluation Steps :`;
-  const messages: ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     { role: "user", content: formatted },
   ];
   return messages;
@@ -68,10 +236,10 @@ export function promptSystemAnalysis(rubric: string) {
   return formatted;
 }
 export function messageScore(
-  prev_messages: ChatCompletionMessageParam[],
+  prev_messages: ChatMessage[],
   analysis: string
 ) {
-  const messages: ChatCompletionMessageParam[] = [
+  const messages: ChatMessage[] = [
     ...prev_messages,
     { role: "assistant", content: analysis },
     {
@@ -92,24 +260,21 @@ export async function createRubric(
     return "";
   }
   const safeTemperature = normalizedTemperature(model, analysis_temperature);
-  const eval_criteria = await getOpenAI().chat.completions.create({
-    model: model,
+  const evalCriteriaText = await generateChatCompletion({
+    model,
     messages: evalCriteriaMessages(input_prompt),
     temperature: safeTemperature,
   });
-  const eval_steps = await getOpenAI().chat.completions.create({
-    model: model,
-    messages: evalStepsMessages(
-      input_prompt,
-      eval_criteria.choices[0].message.content ?? ""
-    ),
+  const evalStepsText = await generateChatCompletion({
+    model,
+    messages: evalStepsMessages(input_prompt, evalCriteriaText ?? ""),
     temperature: safeTemperature,
   });
   const formatted = `Evaluation Criteria:
-  ${eval_criteria.choices[0].message.content ?? ""}
+  ${evalCriteriaText ?? ""}
   
   Evaluation Steps:
-  ${eval_steps.choices[0].message.content ?? ""}
+  ${evalStepsText ?? ""}
   `;
   return formatted;
 }

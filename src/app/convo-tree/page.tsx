@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
@@ -23,8 +24,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { getOpenAI } from "@/app/_ai/nlp";
-import type { ChatCompletionMessageParam } from "openai/resources/index.mjs";
+import { generateChatCompletion, type ChatMessage } from "@/app/_ai/nlp";
 
 
 type Role = "user" | "assistant";
@@ -237,12 +237,70 @@ const MODELS = [
   "gpt-4o-mini",
   "gpt-4-turbo",
   "gpt-3.5-turbo",
+  "claude-4-sonnet-20241022",
+  "claude-4-opus-20241022",
 ];
 
 const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 
 const normalizedTemperatureForModel = (model: string, temperature: number) =>
   model.startsWith("gpt-5") ? 1 : temperature;
+
+
+function sanitizeRuns(runs: ConversationRun[] | undefined): ConversationRun[] {
+  if (!Array.isArray(runs)) {
+    return [];
+  }
+
+  return runs
+    .map((run) => {
+      if (!run || !Array.isArray(run.turns)) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("Skipping malformed run", run);
+        }
+        return null;
+      }
+
+      const turns: RunTurn[] = [];
+      for (let index = 0; index < run.turns.length; index++) {
+        const turn = run.turns[index];
+        if (!turn) {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Skipping run with missing turn", { run, index });
+          }
+          return null;
+        }
+
+        if (turn.role !== "user" && turn.role !== "assistant") {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Skipping run with invalid role", { run, index });
+          }
+          return null;
+        }
+
+        const rawContent = typeof turn.content === "string" ? turn.content : "";
+        const trimmed = rawContent.trim();
+        if (trimmed.length === 0) {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Skipping run with empty content", { run, index });
+          }
+          return null;
+        }
+
+        turns.push({ role: turn.role, content: trimmed, model: turn.model });
+      }
+
+      if (turns.length === 0) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("Skipping empty run", run);
+        }
+        return null;
+      }
+
+      return { ...run, turns };
+    })
+    .filter((run): run is ConversationRun => Boolean(run));
+}
 
 function buildConversationTree(runs: ConversationRun[]): ConversationTree {
   const nodesById: Record<string, ConversationNode> = {};
@@ -418,8 +476,31 @@ function turnsEqual(a: RunTurn[], b: RunTurn[]) {
   });
 }
 
+function runsEqual(a: ConversationRun[], b: ConversationRun[]) {
+  if (a.length !== b.length) {
+    return false;
+  }
+  return a.every((run, index) => {
+    const other = b[index];
+    if (!other || run.id !== other.id) {
+      return false;
+    }
+    return turnsEqual(run.turns, other.turns);
+  });
+}
+
 export default function ConvoTreePage() {
-  const [runs, setRuns] = useState<ConversationRun[]>([]);
+  const [runs, setRawRuns] = useState<ConversationRun[]>([]);
+  const setRuns = useCallback((action: SetStateAction<ConversationRun[]>) => {
+    setRawRuns((prev) => {
+      const proposed =
+        typeof action === "function"
+          ? (action as (current: ConversationRun[]) => ConversationRun[])(prev)
+          : action;
+      const sanitized = sanitizeRuns(proposed);
+      return runsEqual(prev, sanitized) ? prev : sanitized;
+    });
+  }, []);
   const [showMeta, setShowMeta] = useState(true);
   const [generatingKey, setGeneratingKey] = useState<string | null>(null);
   const [generateModel, setGenerateModel] = useState<string>(DEFAULT_GENERATE_MODEL);
@@ -644,18 +725,43 @@ export default function ConvoTreePage() {
     setGeneratingKey(generateKey);
 
     try {
-      const openai = getOpenAI();
-      const messages: ChatCompletionMessageParam[] = [
+      const conversationMessages: ChatMessage[] = contextTurns
+        .filter((turn): turn is RunTurn => Boolean(turn && turn.role && turn.content))
+        .map((turn) => ({
+          role: turn.role,
+          content: turn.content,
+        }));
+
+      if (conversationMessages.length === 0) {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Cannot generate without a user prompt", {
+            contextTurns,
+            node,
+          });
+        }
+        return;
+      }
+
+      const lastConversationMessage =
+        conversationMessages[conversationMessages.length - 1];
+      if (lastConversationMessage.role !== "user") {
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Last turn before generation must be a user message", {
+            node,
+            conversationMessages,
+          });
+        }
+        return;
+      }
+
+      const messages: ChatMessage[] = ([
         {
-          role: "system",
+          role: "system" as const,
           content:
             "You are a helpful AI assistant continuing a conversation. Respond naturally and concisely.",
         },
-        ...contextTurns.map((turn) => ({
-          role: turn.role,
-          content: turn.content,
-        })),
-      ];
+        ...conversationMessages,
+      ] as ChatMessage[]).filter((message) => Boolean(message && message.role && message.content));
 
       const chosenModel = model ?? DEFAULT_GENERATE_MODEL;
       const requestedTemperature =
@@ -667,14 +773,26 @@ export default function ConvoTreePage() {
         requestedTemperature
       );
 
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("Generating", {
+          chosenModel,
+          temperature,
+          messages,
+          conversationMessages,
+          contextTurns,
+        });
+      }
+      if (messages.some((msg) => !msg.role || msg.content == null)) {
+        console.error("Invalid flat messages", messages);
+        throw new Error("Invalid message in generation");
+      }
+
       for (let i = 0; i < count; i++) {
-        const completion = await openai.chat.completions.create({
+        const generated = await generateChatCompletion({
           model: chosenModel,
           messages,
           temperature,
         });
-
-        const generated = completion.choices[0]?.message?.content?.trim();
         if (generated) {
           handleAddNextTurn(node, selectedOption, generated, {
             model: chosenModel,
