@@ -5,6 +5,8 @@ import Cookies from "js-cookie";
 import { z } from "zod";
 import { COOKIES } from "@/constants";
 import { anthropicComplete } from "./server/anthropic";
+import { xaiComplete } from "./server/xai";
+import { geminiComplete } from "./server/gemini";
 
 const normalizedTemperature = (model: string, temperature: number) =>
   model.startsWith("gpt-5") ? 1 : temperature;
@@ -14,7 +16,7 @@ export type ChatMessage = {
   content: string;
 };
 
-type Provider = "openai" | "anthropic";
+type Provider = "openai" | "anthropic" | "xai" | "gemini";
 
 type ConversationTurn = {
   role: "user" | "assistant";
@@ -51,7 +53,10 @@ function getOpenAIClient(): OpenAI {
 }
 
 function resolveProvider(model: string): Provider {
-  return model.startsWith("claude") ? "anthropic" : "openai";
+  if (model.startsWith("claude")) return "anthropic";
+  if (model.startsWith("grok")) return "xai";
+  if (model.startsWith("gemini")) return "gemini";
+  return "openai";
 }
 
 function splitSystemMessages(messages: ChatMessage[]): {
@@ -125,12 +130,52 @@ async function completeWithAnthropic({
   });
 }
 
+async function completeWithXAI({
+  model,
+  messages,
+  temperature,
+  maxTokens,
+}: ChatCompletionParams): Promise<string> {
+  const { system, conversation } = splitSystemMessages(messages);
+  return xaiComplete({
+    model,
+    system,
+    temperature,
+    maxTokens,
+    conversation,
+  });
+}
+
+async function completeWithGemini({
+  model,
+  messages,
+  temperature,
+  maxTokens,
+}: ChatCompletionParams): Promise<string> {
+  const { system, conversation } = splitSystemMessages(messages);
+  return geminiComplete({
+    model,
+    system,
+    temperature,
+    maxTokens,
+    conversation,
+  });
+}
+
 export async function generateChatCompletion(params: ChatCompletionParams): Promise<string> {
   const provider = resolveProvider(params.model);
-  if (provider === "openai") {
-    return completeWithOpenAI(params);
+  switch (provider) {
+    case "openai":
+      return completeWithOpenAI(params);
+    case "anthropic":
+      return completeWithAnthropic(params);
+    case "xai":
+      return completeWithXAI(params);
+    case "gemini":
+      return completeWithGemini(params);
+    default:
+      throw new Error(`Unsupported provider: ${provider}`);
   }
-  return completeWithAnthropic(params);
 }
 
 export async function streamChatCompletion(
@@ -173,10 +218,24 @@ export async function streamChatCompletion(
     return { textStream: iterator };
   }
 
-  // Anthropic streaming requires a different surface. Until we wire up their
-  // event stream, fall back to a single completion emitted as one chunk so the
+  // Non-OpenAI providers require a different surface. Until we wire up their
+  // event streams, fall back to a single completion emitted as one chunk so the
   // rest of the UI can keep polling the same interface.
-  const text = await completeWithAnthropic(params);
+  let text: string;
+  switch (provider) {
+    case "anthropic":
+      text = await completeWithAnthropic(params);
+      break;
+    case "xai":
+      text = await completeWithXAI(params);
+      break;
+    case "gemini":
+      text = await completeWithGemini(params);
+      break;
+    default:
+      throw new Error(`Unsupported provider for streaming: ${provider}`);
+  }
+
   const iterator = (async function* () {
     if (text) {
       yield text;

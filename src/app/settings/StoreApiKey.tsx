@@ -16,7 +16,7 @@ const formSchema = z.object({
 });
 type FormSchema = z.infer<typeof formSchema>;
 
-type Provider = "openai" | "anthropic";
+type Provider = "openai" | "anthropic" | "xai" | "gemini";
 
 interface ApiKeyFormProps {
   label: string;
@@ -183,6 +183,20 @@ export default function StoreApiKey() {
         placeholder="sk-ant-..."
         cookieKey="ANTHROPIC_API_KEY"
         provider="anthropic"
+      />
+      <ApiKeyForm
+        label="xAI API Key"
+        description="Stored locally and used for Grok models."
+        placeholder="xai-..."
+        cookieKey="XAI_API_KEY"
+        provider="xai"
+      />
+      <ApiKeyForm
+        label="Google Gemini API Key"
+        description="Stored locally and used for Gemini models."
+        placeholder="AIza..."
+        cookieKey="GEMINI_API_KEY"
+        provider="gemini"
       />
     </div>
   );

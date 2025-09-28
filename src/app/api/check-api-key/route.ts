@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
-type Provider = "openai" | "anthropic";
+type Provider = "openai" | "anthropic" | "xai" | "gemini";
 
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
 const ANTHROPIC_BASE_URL =
   process.env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com";
 const ANTHROPIC_VERSION = process.env.ANTHROPIC_VERSION ?? "2023-06-01";
+const XAI_BASE_URL = process.env.XAI_BASE_URL ?? "https://api.x.ai";
+const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com";
 
 async function fetchJsonSafe(response: Response) {
   try {
@@ -90,9 +92,52 @@ async function checkAnthropic(apiKey: string) {
   throw withStatus(new Error(message), response.status);
 }
 
+async function checkXAI(apiKey: string) {
+  const base = XAI_BASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${base}/v1/models`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  const payload = await fetchJsonSafe(response);
+  const message =
+    payload?.error?.message ||
+    payload?.error ||
+    `xAI responded with status ${response.status}`;
+
+  throw withStatus(new Error(message), response.status);
+}
+
+async function checkGemini(apiKey: string) {
+  const base = GEMINI_BASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${base}/v1beta/models?key=${apiKey}`, {
+    method: "GET",
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  const payload = await fetchJsonSafe(response);
+  const message =
+    payload?.error?.message ||
+    payload?.error ||
+    `Gemini responded with status ${response.status}`;
+
+  throw withStatus(new Error(message), response.status);
+}
+
 const PROVIDER_CHECKERS: Record<Provider, (apiKey: string) => Promise<void>> = {
   openai: checkOpenAI,
   anthropic: checkAnthropic,
+  xai: checkXAI,
+  gemini: checkGemini,
 };
 
 export async function POST(request: Request) {
@@ -111,7 +156,7 @@ export async function POST(request: Request) {
 
     const normalizedProvider = provider.toLowerCase();
 
-    if (!["openai", "anthropic"].includes(normalizedProvider)) {
+    if (!["openai", "anthropic", "xai", "gemini"].includes(normalizedProvider)) {
       return NextResponse.json(
         { ok: false, error: "Unsupported provider." },
         { status: 400 }
