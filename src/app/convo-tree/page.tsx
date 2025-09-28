@@ -1065,16 +1065,6 @@ export default function ConvoTreePage() {
           )}
         </div>
       </div>
-
-      {runs.length === 0 && path.length === 1 && !path[0].selectedOption && (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-10 text-center text-muted-foreground">
-          <p className="text-sm">
-            Add your first prompt to begin exploring branches, or load the
-            example conversation to see a filled-out tree.
-          </p>
-        </div>
-      )}
-
       <div className="space-y-6">
         {(() => {
           let previousCandidates: string[] | null = null;
