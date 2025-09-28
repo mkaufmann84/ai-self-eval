@@ -26,7 +26,6 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { generateChatCompletion, type ChatMessage } from "@/app/_ai/nlp";
 
-
 type Role = "user" | "assistant";
 
 interface RunTurn {
@@ -226,8 +225,9 @@ const sampleRuns: ConversationRun[] = [
 ];
 
 const ROOT_KEY = "root";
-const DEFAULT_GENERATE_MODEL = "gpt-4o-mini";
-const DEFAULT_GENERATE_TEMPERATURE = 0.7;
+const DEFAULT_GENERATE_MODEL = "chatgpt-4o-latest";
+const DEFAULT_GENERATE_TEMPERATURE = 1;
+const DEFAULT_SYSTEM_PROMPT = "";
 const MODELS = [
   "gpt-5",
   "gpt-5-mini",
@@ -246,6 +246,37 @@ const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 const normalizedTemperatureForModel = (model: string, temperature: number) =>
   model.startsWith("gpt-5") ? 1 : temperature;
 
+const isValidChatMessage = (
+  message: ChatMessage | undefined | null
+): message is ChatMessage =>
+  Boolean(message && message.role && typeof message.content === "string");
+
+function buildConversationMessages(turns: RunTurn[]): ChatMessage[] {
+  return turns
+    .filter((turn): turn is RunTurn =>
+      Boolean(turn && turn.role && turn.content)
+    )
+    .map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    }));
+}
+
+function buildCompletionMessages(
+  conversation: ChatMessage[],
+  systemPrompt: string = DEFAULT_SYSTEM_PROMPT
+): ChatMessage[] {
+  const trimmedPrompt = systemPrompt.trim();
+  const systemMessages = trimmedPrompt
+    ? ([
+        {
+          role: "system" as const,
+          content: trimmedPrompt,
+        },
+      ] satisfies ChatMessage[])
+    : [];
+  return [...systemMessages, ...conversation].filter(isValidChatMessage);
+}
 
 function sanitizeRuns(runs: ConversationRun[] | undefined): ConversationRun[] {
   if (!Array.isArray(runs)) {
@@ -394,7 +425,8 @@ function buildPath(
     const selectedOptionId = selectedMap[node.id];
     const selectedOption =
       node.options.find((opt) => opt.id === selectedOptionId) ??
-      node.options[0] ?? null;
+      node.options[0] ??
+      null;
 
     steps.push({ node, selectedOption });
 
@@ -502,8 +534,12 @@ export default function ConvoTreePage() {
     });
   }, []);
   const [showMeta, setShowMeta] = useState(true);
-  const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
-  const [generateModel, setGenerateModel] = useState<string>(DEFAULT_GENERATE_MODEL);
+  const [generatingMap, setGeneratingMap] = useState<Record<string, number>>(
+    {}
+  );
+  const [generateModel, setGenerateModel] = useState<string>(
+    DEFAULT_GENERATE_MODEL
+  );
   const [generateCount, setGenerateCount] = useState<number>(1);
   const [generateTemperature, setGenerateTemperature] = useState<number>(
     DEFAULT_GENERATE_TEMPERATURE
@@ -587,7 +623,8 @@ export default function ConvoTreePage() {
       {
         role: node.role,
         content: trimmed,
-        model: options?.model ?? (node.role === "assistant" ? "manual" : undefined),
+        model:
+          options?.model ?? (node.role === "assistant" ? "manual" : undefined),
       },
     ];
 
@@ -627,7 +664,12 @@ export default function ConvoTreePage() {
     }
 
     if (!baseTurns) {
-      baseTurns = collectTurnsUpToDepth(tree, selectedMap, node.depth + 1, runs);
+      baseTurns = collectTurnsUpToDepth(
+        tree,
+        selectedMap,
+        node.depth + 1,
+        runs
+      );
     }
 
     if (!baseTurns) {
@@ -639,7 +681,9 @@ export default function ConvoTreePage() {
       {
         role: nextRole(node.role),
         content: trimmed,
-        model: options?.model ?? (nextRole(node.role) === "assistant" ? "manual" : undefined),
+        model:
+          options?.model ??
+          (nextRole(node.role) === "assistant" ? "manual" : undefined),
       },
     ];
 
@@ -674,10 +718,7 @@ export default function ConvoTreePage() {
           return {
             ...turn,
             content: updatedContent,
-            model:
-              turn.role === "assistant"
-                ? "edited"
-                : turn.model,
+            model: turn.role === "assistant" ? "edited" : turn.model,
           };
         });
         return { ...run, turns };
@@ -737,12 +778,7 @@ export default function ConvoTreePage() {
     };
 
     try {
-      const conversationMessages: ChatMessage[] = contextTurns
-        .filter((turn): turn is RunTurn => Boolean(turn && turn.role && turn.content))
-        .map((turn) => ({
-          role: turn.role,
-          content: turn.content,
-        }));
+      const conversationMessages = buildConversationMessages(contextTurns);
 
       if (conversationMessages.length === 0) {
         if (process.env.NODE_ENV !== "production") {
@@ -766,14 +802,7 @@ export default function ConvoTreePage() {
         return;
       }
 
-      const messages: ChatMessage[] = ([
-        {
-          role: "system" as const,
-          content:
-            "You are a helpful AI assistant continuing a conversation. Respond naturally and concisely.",
-        },
-        ...conversationMessages,
-      ] as ChatMessage[]).filter((message) => Boolean(message && message.role && message.content));
+      const messages = buildCompletionMessages(conversationMessages);
 
       const chosenModel = model ?? DEFAULT_GENERATE_MODEL;
       const requestedTemperature =
@@ -793,10 +822,6 @@ export default function ConvoTreePage() {
           conversationMessages,
           contextTurns,
         });
-      }
-      if (messages.some((msg) => !msg.role || msg.content == null)) {
-        console.error("Invalid flat messages", messages);
-        throw new Error("Invalid message in generation");
       }
 
       adjustGenerating(count);
@@ -910,9 +935,7 @@ export default function ConvoTreePage() {
                 setGenerateTemperature(DEFAULT_GENERATE_TEMPERATURE);
                 return;
               }
-              setGenerateTemperature(() =>
-                Math.min(Math.max(value, 0), 2)
-              );
+              setGenerateTemperature(() => Math.min(Math.max(value, 0), 2));
             }}
             className="h-9 w-20"
           />
@@ -930,16 +953,6 @@ export default function ConvoTreePage() {
           {showMeta ? "Hide meta" : "Show meta"}
         </Button>
       </div>
-
-      {runs.length === 0 && path.length === 1 && !path[0].selectedOption && (
-        <div className="rounded-lg border border-dashed bg-muted/20 p-10 text-center text-muted-foreground">
-          <p className="text-sm">
-            Add your first prompt to begin exploring branches, or load the
-            example conversation to see a filled-out tree.
-          </p>
-        </div>
-      )}
-
       <div className="space-y-6">
         {(() => {
           let previousCandidates: string[] | null = null;
@@ -966,15 +979,15 @@ export default function ConvoTreePage() {
                 onSelectOption={handleSelectOption}
                 onAddOption={handleAddOption}
                 onAddNextTurn={handleAddNextTurn}
-            onGenerateNext={(node, option) =>
-              handleGenerateNext(
-                node,
-                option,
-                generateModel,
-                generateCount,
-                generateTemperature
-              )
-            }
+                onGenerateNext={(node, option) =>
+                  handleGenerateNext(
+                    node,
+                    option,
+                    generateModel,
+                    generateCount,
+                    generateTemperature
+                  )
+                }
                 onEditNode={handleEditNode}
                 onPruneNode={handlePruneNode}
                 isGenerating={
@@ -1057,8 +1070,7 @@ function ConversationNodeCard({
           {showMeta && (
             <p className="text-xs text-muted-foreground mt-1">
               {node.options.length} option
-              {node.options.length === 1 ? "" : "s"} over {uniqueRunCount(node)}
-              {" "}
+              {node.options.length === 1 ? "" : "s"} over {uniqueRunCount(node)}{" "}
               conversation run
               {uniqueRunCount(node) === 1 ? "" : "s"}
             </p>
@@ -1073,7 +1085,9 @@ function ConversationNodeCard({
           <AddMessageButton
             label="Add option"
             title={`Add ${friendlyRoleLabel(node.role)} option`}
-            description={`Create another ${friendlyRoleLabel(node.role)} message for this turn.`}
+            description={`Create another ${friendlyRoleLabel(
+              node.role
+            )} message for this turn.`}
             onSubmit={(value) => onAddOption(node, value)}
           />
         </div>
@@ -1091,7 +1105,9 @@ function ConversationNodeCard({
               <p className="whitespace-pre-wrap">{selectedOption.content}</p>
               {selectedOption.models?.length ? (
                 <div className="text-xs text-muted-foreground flex flex-wrap gap-2">
-                  <span className="font-medium uppercase tracking-wide">Models</span>
+                  <span className="font-medium uppercase tracking-wide">
+                    Models
+                  </span>
                   <span>{selectedOption.models.join(", ")}</span>
                 </div>
               ) : null}
@@ -1116,7 +1132,9 @@ function ConversationNodeCard({
           <AddMessageButton
             label={`Add next ${friendlyRoleLabel(nextRole(node.role))}`}
             title={`Add ${friendlyRoleLabel(nextRole(node.role))} turn`}
-            description={`Extend the conversation after this ${friendlyRoleLabel(node.role)} message.`}
+            description={`Extend the conversation after this ${friendlyRoleLabel(
+              node.role
+            )} message.`}
             onSubmit={(value) => onAddNextTurn(node, selectedOption, value)}
             disabled={!hasOptions || !selectedOption || isGenerating}
           />
@@ -1178,7 +1196,8 @@ function OptionControls({
 
   const hasMultiple = node.options.length > 1;
   const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const prevOption = hasMultiple && safeIndex > 0 ? node.options[safeIndex - 1] : undefined;
+  const prevOption =
+    hasMultiple && safeIndex > 0 ? node.options[safeIndex - 1] : undefined;
   const nextOption =
     hasMultiple && safeIndex < node.options.length - 1
       ? node.options[safeIndex + 1]
@@ -1319,7 +1338,10 @@ function AddMessageButton({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : closeDialog())}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => (next ? setOpen(true) : closeDialog())}
+    >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" disabled={disabled}>
           {label}
