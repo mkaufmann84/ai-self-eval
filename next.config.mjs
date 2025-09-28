@@ -1,6 +1,11 @@
+const BASE_PATH = "/ai-self-eval";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    basePath: '/ai-self-eval'
+  basePath: BASE_PATH,
+  env: {
+    NEXT_PUBLIC_BASE_PATH: BASE_PATH,
+  },
 };
 
 export default nextConfig;

@@ -1,11 +1,6 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import {
-  Form,
-  FormField,
-  FormItem,
-  FormMessage,
-} from "@/components/ui/form";
+import { Form, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Cookies from "js-cookie";
@@ -14,8 +9,11 @@ import { useForm } from "react-hook-form";
 import { IoEye, IoEyeOff } from "react-icons/io5";
 import { z } from "zod";
 import { COOKIES } from "@/constants";
+import { apiPath } from "@/lib/base-path";
 
-const formSchema = z.object({ api_key: z.string().min(1, "API key is required") });
+const formSchema = z.object({
+  api_key: z.string().min(1, "API key is required"),
+});
 type FormSchema = z.infer<typeof formSchema>;
 
 type Provider = "openai" | "anthropic";
@@ -28,7 +26,13 @@ interface ApiKeyFormProps {
   provider: Provider;
 }
 
-function ApiKeyForm({ label, description, placeholder, cookieKey, provider }: ApiKeyFormProps) {
+function ApiKeyForm({
+  label,
+  description,
+  placeholder,
+  cookieKey,
+  provider,
+}: ApiKeyFormProps) {
   const [visible, setVisible] = React.useState(false);
   const [checkStatus, setCheckStatus] = React.useState<
     "idle" | "checking" | "valid" | "invalid"
@@ -63,7 +67,7 @@ function ApiKeyForm({ label, description, placeholder, cookieKey, provider }: Ap
     try {
       setCheckStatus("checking");
       setCheckMessage("");
-      const response = await fetch("/api/check-api-key", {
+      const response = await fetch(apiPath("/api/check-api-key"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider, apiKey }),
@@ -106,7 +110,11 @@ function ApiKeyForm({ label, description, placeholder, cookieKey, provider }: Ap
               className="rounded-r-none bg-card border-input border-2 border-r-0"
               onClick={() => setVisible((current) => !current)}
             >
-              {visible ? <IoEyeOff size="1.125rem" /> : <IoEye size="1.125rem" />}
+              {visible ? (
+                <IoEyeOff size="1.125rem" />
+              ) : (
+                <IoEye size="1.125rem" />
+              )}
             </Button>
             <FormField
               control={form.control}

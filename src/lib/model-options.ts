@@ -5,10 +5,11 @@ export const RESPONSE_MODEL_VALUES = [
   "chatgpt-4o-latest",
   "gpt-4o",
   "gpt-4o-mini",
-  "gpt-4-turbo",
   "gpt-3.5-turbo",
-  "claude-4-sonnet-20241022",
-  "claude-4-opus-20241022",
+  "grok-4",
+  "gemini-2.5-pro",
+  "claude-opus-4-1-20250805",
+  "claude-sonnet-4-20250514",
 ] as const;
 
 export type ResponseModelValue = (typeof RESPONSE_MODEL_VALUES)[number];
@@ -20,10 +21,11 @@ const RESPONSE_MODEL_LABELS: Record<ResponseModelValue, string> = {
   "chatgpt-4o-latest": "ChatGPT-4o latest",
   "gpt-4o": "GPT-4o",
   "gpt-4o-mini": "GPT-4o mini",
-  "gpt-4-turbo": "GPT-4 turbo",
   "gpt-3.5-turbo": "GPT-3.5 turbo",
-  "claude-4-sonnet-20241022": "Claude 4 Sonnet (2024-10-22)",
-  "claude-4-opus-20241022": "Claude 4 Opus (2024-10-22)",
+  "grok-4": "Grok 4",
+  "gemini-2.5-pro": "Gemini 2.5 Pro",
+  "claude-opus-4-1-20250805": "Claude Opus 4.1",
+  "claude-sonnet-4-20250514": "Claude Sonnet 4",
 };
 
 export const RESPONSE_MODEL_OPTIONS: ReadonlyArray<{
