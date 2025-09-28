@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { SetStateAction } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +31,10 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { generateChatCompletion, type ChatMessage } from "@/app/_ai/nlp";
-
+import {
+  RESPONSE_MODEL_OPTIONS,
+  type ResponseModelValue,
+} from "@/lib/model-options";
 
 type Role = "user" | "assistant";
 
@@ -226,26 +235,59 @@ const sampleRuns: ConversationRun[] = [
 ];
 
 const ROOT_KEY = "root";
-const DEFAULT_GENERATE_MODEL = "gpt-4o-mini";
-const DEFAULT_GENERATE_TEMPERATURE = 0.7;
-const MODELS = [
-  "gpt-5",
-  "gpt-5-mini",
-  "gpt-5-chat-latest",
-  "chatgpt-4o-latest",
-  "gpt-4o",
-  "gpt-4o-mini",
-  "gpt-4-turbo",
-  "gpt-3.5-turbo",
-  "claude-4-sonnet-20241022",
-  "claude-4-opus-20241022",
-];
+const DEFAULT_SYSTEM_PROMPT = "";
+const DEFAULT_GENERATE_MODEL: ResponseModelValue = "gpt-5";
+const ADDITIONAL_GENERATE_MODEL: ResponseModelValue = "gpt-4o";
+const DEFAULT_GENERATE_COUNT = 5;
+const DEFAULT_GENERATE_TEMPERATURE = 1.2;
 
 const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 
-const normalizedTemperatureForModel = (model: string, temperature: number) =>
+const normalizedTemperatureForModel = (
+  model: ResponseModelValue,
+  temperature: number
+) =>
   model.startsWith("gpt-5") ? 1 : temperature;
 
+interface GenerateConfig {
+  id: string;
+  model: ResponseModelValue;
+  count: number;
+}
+
+type GenerateRequest = Pick<GenerateConfig, "model" | "count">;
+
+const isValidChatMessage = (
+  message: ChatMessage | undefined | null
+): message is ChatMessage =>
+  Boolean(message && message.role && typeof message.content === "string");
+
+function buildConversationMessages(turns: RunTurn[]): ChatMessage[] {
+  return turns
+    .filter((turn): turn is RunTurn =>
+      Boolean(turn && turn.role && turn.content)
+    )
+    .map((turn) => ({
+      role: turn.role,
+      content: turn.content,
+    }));
+}
+
+function buildCompletionMessages(
+  conversation: ChatMessage[],
+  systemPrompt: string = DEFAULT_SYSTEM_PROMPT
+): ChatMessage[] {
+  const trimmedPrompt = systemPrompt.trim();
+  const systemMessages = trimmedPrompt
+    ? ([
+        {
+          role: "system" as const,
+          content: trimmedPrompt,
+        },
+      ] satisfies ChatMessage[])
+    : [];
+  return [...systemMessages, ...conversation].filter(isValidChatMessage);
+}
 
 function sanitizeRuns(runs: ConversationRun[] | undefined): ConversationRun[] {
   if (!Array.isArray(runs)) {
@@ -394,7 +436,8 @@ function buildPath(
     const selectedOptionId = selectedMap[node.id];
     const selectedOption =
       node.options.find((opt) => opt.id === selectedOptionId) ??
-      node.options[0] ?? null;
+      node.options[0] ??
+      null;
 
     steps.push({ node, selectedOption });
 
@@ -503,18 +546,58 @@ export default function ConvoTreePage() {
   }, []);
   const [showMeta, setShowMeta] = useState(true);
   const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
-  const [generateModel, setGenerateModel] = useState<string>(DEFAULT_GENERATE_MODEL);
-  const [generateCount, setGenerateCount] = useState<number>(1);
+  const [generateConfigs, setGenerateConfigs] = useState<GenerateConfig[]>([
+    {
+      id: "config_0",
+      model: DEFAULT_GENERATE_MODEL,
+      count: DEFAULT_GENERATE_COUNT,
+    },
+  ]);
+  const generateConfigIdRef = useRef(1);
   const [generateTemperature, setGenerateTemperature] = useState<number>(
     DEFAULT_GENERATE_TEMPERATURE
   );
-  const isFixedTemperatureModel = generateModel.startsWith("gpt-5");
+  const isFixedTemperatureModel = useMemo(
+    () => generateConfigs.some((config) => config.model.startsWith("gpt-5")),
+    [generateConfigs]
+  );
 
   useEffect(() => {
     if (isFixedTemperatureModel) {
       setGenerateTemperature(1);
     }
   }, [isFixedTemperatureModel]);
+
+  const handleAddGenerateConfig = useCallback(() => {
+    setGenerateConfigs((prev) => [
+      ...prev,
+      {
+        id: `config_${generateConfigIdRef.current++}`,
+        model: ADDITIONAL_GENERATE_MODEL,
+        count: DEFAULT_GENERATE_COUNT,
+      },
+    ]);
+  }, []);
+
+  const handleUpdateGenerateConfig = useCallback(
+    (id: string, updates: Partial<Omit<GenerateConfig, "id">>) => {
+      setGenerateConfigs((prev) =>
+        prev.map((config) =>
+          config.id === id ? { ...config, ...updates } : config
+        )
+      );
+    },
+    []
+  );
+
+  const handleRemoveGenerateConfig = useCallback((id: string) => {
+    setGenerateConfigs((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      return prev.filter((config) => config.id !== id);
+    });
+  }, []);
 
   const tree = useMemo(() => buildConversationTree(runs), [runs]);
   const [selectedMap, setSelectedMap] = useState<Record<string, string>>({});
@@ -587,7 +670,8 @@ export default function ConvoTreePage() {
       {
         role: node.role,
         content: trimmed,
-        model: options?.model ?? (node.role === "assistant" ? "manual" : undefined),
+        model:
+          options?.model ?? (node.role === "assistant" ? "manual" : undefined),
       },
     ];
 
@@ -627,7 +711,12 @@ export default function ConvoTreePage() {
     }
 
     if (!baseTurns) {
-      baseTurns = collectTurnsUpToDepth(tree, selectedMap, node.depth + 1, runs);
+      baseTurns = collectTurnsUpToDepth(
+        tree,
+        selectedMap,
+        node.depth + 1,
+        runs
+      );
     }
 
     if (!baseTurns) {
@@ -639,7 +728,9 @@ export default function ConvoTreePage() {
       {
         role: nextRole(node.role),
         content: trimmed,
-        model: options?.model ?? (nextRole(node.role) === "assistant" ? "manual" : undefined),
+        model:
+          options?.model ??
+          (nextRole(node.role) === "assistant" ? "manual" : undefined),
       },
     ];
 
@@ -674,10 +765,7 @@ export default function ConvoTreePage() {
           return {
             ...turn,
             content: updatedContent,
-            model:
-              turn.role === "assistant"
-                ? "edited"
-                : turn.model,
+            model: turn.role === "assistant" ? "edited" : turn.model,
           };
         });
         return { ...run, turns };
@@ -703,8 +791,7 @@ export default function ConvoTreePage() {
   const handleGenerateNext = async (
     node: ConversationNode,
     selectedOption: ConversationOption | null,
-    model?: string,
-    count: number = 1,
+    requests: GenerateRequest[],
     temperatureOverride?: number
   ) => {
     if (!selectedOption || nextRole(node.role) !== "assistant") {
@@ -718,6 +805,13 @@ export default function ConvoTreePage() {
       runs
     );
     if (!contextTurns) {
+      return;
+    }
+
+    const safeRequests = (requests ?? []).filter(
+      (request) => request && Number.isFinite(request.count) && request.count > 0
+    );
+    if (safeRequests.length === 0) {
       return;
     }
 
@@ -737,12 +831,7 @@ export default function ConvoTreePage() {
     };
 
     try {
-      const conversationMessages: ChatMessage[] = contextTurns
-        .filter((turn): turn is RunTurn => Boolean(turn && turn.role && turn.content))
-        .map((turn) => ({
-          role: turn.role,
-          content: turn.content,
-        }));
+      const conversationMessages = buildConversationMessages(contextTurns);
 
       if (conversationMessages.length === 0) {
         if (process.env.NODE_ENV !== "production") {
@@ -766,63 +855,63 @@ export default function ConvoTreePage() {
         return;
       }
 
-      const messages: ChatMessage[] = ([
-        {
-          role: "system" as const,
-          content:
-            "You are a helpful AI assistant continuing a conversation. Respond naturally and concisely.",
-        },
-        ...conversationMessages,
-      ] as ChatMessage[]).filter((message) => Boolean(message && message.role && message.content));
+      const messages = buildCompletionMessages(conversationMessages);
 
-      const chosenModel = model ?? DEFAULT_GENERATE_MODEL;
       const requestedTemperature =
         typeof temperatureOverride === "number"
           ? temperatureOverride
           : DEFAULT_GENERATE_TEMPERATURE;
-      const temperature = normalizedTemperatureForModel(
-        chosenModel,
-        requestedTemperature
-      );
-
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("Generating", {
-          chosenModel,
-          temperature,
-          messages,
-          conversationMessages,
-          contextTurns,
-        });
-      }
       if (messages.some((msg) => !msg.role || msg.content == null)) {
         console.error("Invalid flat messages", messages);
         throw new Error("Invalid message in generation");
       }
 
-      adjustGenerating(count);
+      await Promise.all(
+        safeRequests.map(async (request) => {
+          const chosenModel = request.model || DEFAULT_GENERATE_MODEL;
+          const count = Math.max(1, Math.round(request.count));
+          const temperature = normalizedTemperatureForModel(
+            chosenModel,
+            requestedTemperature
+          );
 
-      const tasks = Array.from({ length: count }, (_unused, index) =>
-        (async () => {
-          try {
-            const generated = await generateChatCompletion({
-              model: chosenModel,
-              messages,
+          if (process.env.NODE_ENV !== "production") {
+            console.debug("Generating", {
+              chosenModel,
               temperature,
+              messages,
+              conversationMessages,
+              contextTurns,
+              count,
             });
-            if (generated) {
-              handleAddNextTurn(node, selectedOption, generated, {
-                model: chosenModel,
-              });
-            }
-          } catch (error) {
-            console.error("Failed to generate response", { error, index });
-          } finally {
-            adjustGenerating(-1);
           }
-        })()
-      );
 
-      await Promise.allSettled(tasks);
+          adjustGenerating(count);
+
+          const tasks = Array.from({ length: count }, (_unused, index) =>
+            (async () => {
+              try {
+                const generated = await generateChatCompletion({
+                  model: chosenModel,
+                  messages,
+                  temperature,
+                });
+                if (generated) {
+                  handleAddNextTurn(node, selectedOption, generated, {
+                    model: chosenModel,
+                  });
+                }
+              } catch (error) {
+                console.error("Failed to generate response", { error, index });
+              } finally {
+                adjustGenerating(-1);
+              }
+            })()
+          );
+
+          await Promise.allSettled(tasks);
+        })
+      );
     } catch (error) {
       console.error("Failed to generate response", error);
     }
@@ -863,65 +952,6 @@ export default function ConvoTreePage() {
         <Button size="sm" onClick={handleLoadExample}>
           Load example convo
         </Button>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Model</span>
-          <Select value={generateModel} onValueChange={setGenerateModel}>
-            <SelectTrigger className="w-40 h-9">
-              <SelectValue placeholder="Select model" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {MODELS.map((model) => (
-                <SelectItem key={model} value={model}>
-                  {model}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Count</span>
-          <Input
-            type="number"
-            min={1}
-            max={10}
-            value={generateCount}
-            onChange={(event) =>
-              setGenerateCount(() => {
-                const value = Number(event.target.value);
-                if (Number.isNaN(value)) return 1;
-                return Math.min(Math.max(value, 1), 10);
-              })
-            }
-            className="h-9 w-16"
-          />
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Temp</span>
-          <Input
-            type="number"
-            min={0}
-            max={2}
-            step={0.1}
-            value={isFixedTemperatureModel ? 1 : generateTemperature}
-            disabled={isFixedTemperatureModel}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (Number.isNaN(value)) {
-                setGenerateTemperature(DEFAULT_GENERATE_TEMPERATURE);
-                return;
-              }
-              setGenerateTemperature(() =>
-                Math.min(Math.max(value, 0), 2)
-              );
-            }}
-            className="h-9 w-20"
-          />
-          {isFixedTemperatureModel && (
-            <span className="text-xs text-muted-foreground">
-              Fixed at 1 for {generateModel}
-            </span>
-          )}
-        </div>
         <Button
           size="sm"
           variant={showMeta ? "default" : "outline"}
@@ -929,6 +959,111 @@ export default function ConvoTreePage() {
         >
           {showMeta ? "Hide meta" : "Show meta"}
         </Button>
+      </div>
+
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Response Models
+          </div>
+          <div className="border border-input rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1fr_150px_80px] items-center bg-muted px-4 py-2 text-sm font-medium uppercase tracking-wide">
+              <span>Model</span>
+              <span className="text-right"># Responses</span>
+              <span className="text-center">Actions</span>
+            </div>
+            {generateConfigs.map((config) => (
+              <div
+                key={config.id}
+                className="grid grid-cols-[1fr_150px_80px] items-center gap-2 border-t border-input px-4 py-3"
+              >
+                <Select
+                  value={config.model}
+                  onValueChange={(value) =>
+                    handleUpdateGenerateConfig(config.id, {
+                      model: value as ResponseModelValue,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {RESPONSE_MODEL_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min={1}
+                  value={config.count}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    handleUpdateGenerateConfig(config.id, {
+                      count: Number.isNaN(value)
+                        ? DEFAULT_GENERATE_COUNT
+                        : Math.max(Math.round(value), 1),
+                    });
+                  }}
+                  className="h-9"
+                />
+                <div className="flex justify-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveGenerateConfig(config.id)}
+                    disabled={generateConfigs.length === 1}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddGenerateConfig}
+            >
+              Add model
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Temp</span>
+            <Input
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              value={isFixedTemperatureModel ? 1 : generateTemperature}
+              disabled={isFixedTemperatureModel}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isNaN(value)) {
+                  setGenerateTemperature(DEFAULT_GENERATE_TEMPERATURE);
+                  return;
+                }
+                setGenerateTemperature(() =>
+                  Math.min(Math.max(value, 0), 2)
+                );
+              }}
+              className="h-9 w-20"
+            />
+          </div>
+          {isFixedTemperatureModel && (
+            <span className="text-xs text-muted-foreground">
+              Temperature fixed at 1 when GPT-5 models are selected.
+            </span>
+          )}
+        </div>
       </div>
 
       {runs.length === 0 && path.length === 1 && !path[0].selectedOption && (
@@ -966,15 +1101,17 @@ export default function ConvoTreePage() {
                 onSelectOption={handleSelectOption}
                 onAddOption={handleAddOption}
                 onAddNextTurn={handleAddNextTurn}
-            onGenerateNext={(node, option) =>
-              handleGenerateNext(
-                node,
-                option,
-                generateModel,
-                generateCount,
-                generateTemperature
-              )
-            }
+                onGenerateNext={(node, option) =>
+                  handleGenerateNext(
+                    node,
+                    option,
+                    generateConfigs.map(({ model, count }) => ({
+                      model,
+                      count,
+                    })),
+                    generateTemperature
+                  )
+                }
                 onEditNode={handleEditNode}
                 onPruneNode={handlePruneNode}
                 isGenerating={
@@ -1057,8 +1194,7 @@ function ConversationNodeCard({
           {showMeta && (
             <p className="text-xs text-muted-foreground mt-1">
               {node.options.length} option
-              {node.options.length === 1 ? "" : "s"} over {uniqueRunCount(node)}
-              {" "}
+              {node.options.length === 1 ? "" : "s"} over {uniqueRunCount(node)}{" "}
               conversation run
               {uniqueRunCount(node) === 1 ? "" : "s"}
             </p>
@@ -1073,7 +1209,9 @@ function ConversationNodeCard({
           <AddMessageButton
             label="Add option"
             title={`Add ${friendlyRoleLabel(node.role)} option`}
-            description={`Create another ${friendlyRoleLabel(node.role)} message for this turn.`}
+            description={`Create another ${friendlyRoleLabel(
+              node.role
+            )} message for this turn.`}
             onSubmit={(value) => onAddOption(node, value)}
           />
         </div>
@@ -1091,7 +1229,9 @@ function ConversationNodeCard({
               <p className="whitespace-pre-wrap">{selectedOption.content}</p>
               {selectedOption.models?.length ? (
                 <div className="text-xs text-muted-foreground flex flex-wrap gap-2">
-                  <span className="font-medium uppercase tracking-wide">Models</span>
+                  <span className="font-medium uppercase tracking-wide">
+                    Models
+                  </span>
                   <span>{selectedOption.models.join(", ")}</span>
                 </div>
               ) : null}
@@ -1116,7 +1256,9 @@ function ConversationNodeCard({
           <AddMessageButton
             label={`Add next ${friendlyRoleLabel(nextRole(node.role))}`}
             title={`Add ${friendlyRoleLabel(nextRole(node.role))} turn`}
-            description={`Extend the conversation after this ${friendlyRoleLabel(node.role)} message.`}
+            description={`Extend the conversation after this ${friendlyRoleLabel(
+              node.role
+            )} message.`}
             onSubmit={(value) => onAddNextTurn(node, selectedOption, value)}
             disabled={!hasOptions || !selectedOption || isGenerating}
           />
@@ -1178,7 +1320,8 @@ function OptionControls({
 
   const hasMultiple = node.options.length > 1;
   const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const prevOption = hasMultiple && safeIndex > 0 ? node.options[safeIndex - 1] : undefined;
+  const prevOption =
+    hasMultiple && safeIndex > 0 ? node.options[safeIndex - 1] : undefined;
   const nextOption =
     hasMultiple && safeIndex < node.options.length - 1
       ? node.options[safeIndex + 1]
@@ -1319,7 +1462,10 @@ function AddMessageButton({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : closeDialog())}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => (next ? setOpen(true) : closeDialog())}
+    >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" disabled={disabled}>
           {label}
