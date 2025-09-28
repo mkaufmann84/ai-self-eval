@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 const NAV_LINKS = [
   { href: "/", label: "Analysis" },
   { href: "/convo-tree", label: "Convo Tree" },
+  { href: "/convo-tree-claude", label: "Convo Tree Claude" },
+  { href: "/settings", label: "Settings" },
 ];
 
 interface TopNavProps {

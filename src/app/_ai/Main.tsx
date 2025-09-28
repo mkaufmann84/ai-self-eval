@@ -41,6 +41,12 @@ import ReactMarkdown from "react-markdown";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useTheme } from "next-themes";
 import ErrorDialog from "../_components/ErrorDialog";
+import {
+  ANALYSIS_MODEL_OPTIONS,
+  ANALYSIS_MODEL_VALUES,
+  RESPONSE_MODEL_OPTIONS,
+  RESPONSE_MODEL_VALUES,
+} from "@/lib/model-options";
 
 interface InputContext {
   cM: React.MutableRefObject<CacheManager>;
@@ -344,18 +350,7 @@ const R = ({
   );
 };
 const Response = React.memo(R);
-const models = z.enum([
-  "gpt-5",
-  "gpt-5-mini",
-  "gpt-5-chat-latest",
-  "chatgpt-4o-latest",
-  "gpt-4o",
-  "gpt-4o-mini",
-  "gpt-4-turbo",
-  "gpt-3.5-turbo",
-  "claude-4-sonnet-20241022",
-  "claude-4-opus-20241022",
-]);
+const models = z.enum(RESPONSE_MODEL_VALUES);
 const responseOption = z.object({
   response_model: models,
   num_responses: z.coerce.number().positive().int(),
@@ -363,7 +358,7 @@ const responseOption = z.object({
 const inputForm = z.object({
   prompt: z.string().min(1, "Prompt is required"),
   response_options: z.array(responseOption).min(1),
-  analysis_model: models.or(z.literal("skip")),
+  analysis_model: z.enum(ANALYSIS_MODEL_VALUES),
   response_temperature: z.coerce.number().min(0).max(2),
   analysis_temperature: z.coerce.number().min(0).max(2),
 });
@@ -451,18 +446,14 @@ function InputForm({
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="gpt-5">GPT-5</SelectItem>
-                            <SelectItem value="gpt-5-mini">GPT-5 mini</SelectItem>
-                            <SelectItem value="gpt-5-chat-latest">
-                              GPT-5 chat latest
-                            </SelectItem>
-                            <SelectItem value="chatgpt-4o-latest">
-                              ChatGPT-4o latest
-                            </SelectItem>
-                            <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                            <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
-                            <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                            <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
+                            {RESPONSE_MODEL_OPTIONS.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -525,19 +516,11 @@ function InputForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="gpt-5">GPT-5</SelectItem>
-                      <SelectItem value="gpt-5-mini">GPT-5 mini</SelectItem>
-                      <SelectItem value="gpt-5-chat-latest">
-                        GPT-5 chat latest
-                      </SelectItem>
-                      <SelectItem value="chatgpt-4o-latest">
-                        ChatGPT-4o latest
-                      </SelectItem>
-                      <SelectItem value="gpt-4o">GPT-4o</SelectItem>
-                      <SelectItem value="gpt-4o-mini">GPT-4o mini</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 turbo</SelectItem>
-                      <SelectItem value="skip">Skip analysis</SelectItem>
+                      {ANALYSIS_MODEL_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />

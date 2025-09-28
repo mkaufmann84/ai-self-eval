@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { SetStateAction } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +31,10 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { generateChatCompletion, type ChatMessage } from "@/app/_ai/nlp";
+import {
+  RESPONSE_MODEL_OPTIONS,
+  type ResponseModelValue,
+} from "@/lib/model-options";
 
 type Role = "user" | "assistant";
 
@@ -225,26 +235,27 @@ const sampleRuns: ConversationRun[] = [
 ];
 
 const ROOT_KEY = "root";
-const DEFAULT_GENERATE_MODEL = "chatgpt-4o-latest";
-const DEFAULT_GENERATE_TEMPERATURE = 1;
 const DEFAULT_SYSTEM_PROMPT = "";
-const MODELS = [
-  "gpt-5",
-  "gpt-5-mini",
-  "gpt-5-chat-latest",
-  "chatgpt-4o-latest",
-  "gpt-4o",
-  "gpt-4o-mini",
-  "gpt-4-turbo",
-  "gpt-3.5-turbo",
-  "claude-4-sonnet-20241022",
-  "claude-4-opus-20241022",
-];
+const DEFAULT_GENERATE_MODEL: ResponseModelValue = "gpt-5";
+const ADDITIONAL_GENERATE_MODEL: ResponseModelValue = "gpt-4o";
+const DEFAULT_GENERATE_COUNT = 5;
+const DEFAULT_GENERATE_TEMPERATURE = 1.2;
 
 const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 
-const normalizedTemperatureForModel = (model: string, temperature: number) =>
+const normalizedTemperatureForModel = (
+  model: ResponseModelValue,
+  temperature: number
+) =>
   model.startsWith("gpt-5") ? 1 : temperature;
+
+interface GenerateConfig {
+  id: string;
+  model: ResponseModelValue;
+  count: number;
+}
+
+type GenerateRequest = Pick<GenerateConfig, "model" | "count">;
 
 const isValidChatMessage = (
   message: ChatMessage | undefined | null
@@ -534,23 +545,59 @@ export default function ConvoTreePage() {
     });
   }, []);
   const [showMeta, setShowMeta] = useState(true);
-  const [generatingMap, setGeneratingMap] = useState<Record<string, number>>(
-    {}
-  );
-  const [generateModel, setGenerateModel] = useState<string>(
-    DEFAULT_GENERATE_MODEL
-  );
-  const [generateCount, setGenerateCount] = useState<number>(1);
+  const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
+  const [generateConfigs, setGenerateConfigs] = useState<GenerateConfig[]>([
+    {
+      id: "config_0",
+      model: DEFAULT_GENERATE_MODEL,
+      count: DEFAULT_GENERATE_COUNT,
+    },
+  ]);
+  const generateConfigIdRef = useRef(1);
   const [generateTemperature, setGenerateTemperature] = useState<number>(
     DEFAULT_GENERATE_TEMPERATURE
   );
-  const isFixedTemperatureModel = generateModel.startsWith("gpt-5");
+  const isFixedTemperatureModel = useMemo(
+    () => generateConfigs.some((config) => config.model.startsWith("gpt-5")),
+    [generateConfigs]
+  );
 
   useEffect(() => {
     if (isFixedTemperatureModel) {
       setGenerateTemperature(1);
     }
   }, [isFixedTemperatureModel]);
+
+  const handleAddGenerateConfig = useCallback(() => {
+    setGenerateConfigs((prev) => [
+      ...prev,
+      {
+        id: `config_${generateConfigIdRef.current++}`,
+        model: ADDITIONAL_GENERATE_MODEL,
+        count: DEFAULT_GENERATE_COUNT,
+      },
+    ]);
+  }, []);
+
+  const handleUpdateGenerateConfig = useCallback(
+    (id: string, updates: Partial<Omit<GenerateConfig, "id">>) => {
+      setGenerateConfigs((prev) =>
+        prev.map((config) =>
+          config.id === id ? { ...config, ...updates } : config
+        )
+      );
+    },
+    []
+  );
+
+  const handleRemoveGenerateConfig = useCallback((id: string) => {
+    setGenerateConfigs((prev) => {
+      if (prev.length <= 1) {
+        return prev;
+      }
+      return prev.filter((config) => config.id !== id);
+    });
+  }, []);
 
   const tree = useMemo(() => buildConversationTree(runs), [runs]);
   const [selectedMap, setSelectedMap] = useState<Record<string, string>>({});
@@ -744,8 +791,7 @@ export default function ConvoTreePage() {
   const handleGenerateNext = async (
     node: ConversationNode,
     selectedOption: ConversationOption | null,
-    model?: string,
-    count: number = 1,
+    requests: GenerateRequest[],
     temperatureOverride?: number
   ) => {
     if (!selectedOption || nextRole(node.role) !== "assistant") {
@@ -759,6 +805,13 @@ export default function ConvoTreePage() {
       runs
     );
     if (!contextTurns) {
+      return;
+    }
+
+    const safeRequests = (requests ?? []).filter(
+      (request) => request && Number.isFinite(request.count) && request.count > 0
+    );
+    if (safeRequests.length === 0) {
       return;
     }
 
@@ -804,50 +857,61 @@ export default function ConvoTreePage() {
 
       const messages = buildCompletionMessages(conversationMessages);
 
-      const chosenModel = model ?? DEFAULT_GENERATE_MODEL;
       const requestedTemperature =
         typeof temperatureOverride === "number"
           ? temperatureOverride
           : DEFAULT_GENERATE_TEMPERATURE;
-      const temperature = normalizedTemperatureForModel(
-        chosenModel,
-        requestedTemperature
-      );
-
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("Generating", {
-          chosenModel,
-          temperature,
-          messages,
-          conversationMessages,
-          contextTurns,
-        });
+      if (messages.some((msg) => !msg.role || msg.content == null)) {
+        console.error("Invalid flat messages", messages);
+        throw new Error("Invalid message in generation");
       }
 
-      adjustGenerating(count);
+      await Promise.all(
+        safeRequests.map(async (request) => {
+          const chosenModel = request.model || DEFAULT_GENERATE_MODEL;
+          const count = Math.max(1, Math.round(request.count));
+          const temperature = normalizedTemperatureForModel(
+            chosenModel,
+            requestedTemperature
+          );
 
-      const tasks = Array.from({ length: count }, (_unused, index) =>
-        (async () => {
-          try {
-            const generated = await generateChatCompletion({
-              model: chosenModel,
-              messages,
+          if (process.env.NODE_ENV !== "production") {
+            console.debug("Generating", {
+              chosenModel,
               temperature,
+              messages,
+              conversationMessages,
+              contextTurns,
+              count,
             });
-            if (generated) {
-              handleAddNextTurn(node, selectedOption, generated, {
-                model: chosenModel,
-              });
-            }
-          } catch (error) {
-            console.error("Failed to generate response", { error, index });
-          } finally {
-            adjustGenerating(-1);
           }
-        })()
-      );
 
-      await Promise.allSettled(tasks);
+          adjustGenerating(count);
+
+          const tasks = Array.from({ length: count }, (_unused, index) =>
+            (async () => {
+              try {
+                const generated = await generateChatCompletion({
+                  model: chosenModel,
+                  messages,
+                  temperature,
+                });
+                if (generated) {
+                  handleAddNextTurn(node, selectedOption, generated, {
+                    model: chosenModel,
+                  });
+                }
+              } catch (error) {
+                console.error("Failed to generate response", { error, index });
+              } finally {
+                adjustGenerating(-1);
+              }
+            })()
+          );
+
+          await Promise.allSettled(tasks);
+        })
+      );
     } catch (error) {
       console.error("Failed to generate response", error);
     }
@@ -888,63 +952,6 @@ export default function ConvoTreePage() {
         <Button size="sm" onClick={handleLoadExample}>
           Load example convo
         </Button>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Model</span>
-          <Select value={generateModel} onValueChange={setGenerateModel}>
-            <SelectTrigger className="w-40 h-9">
-              <SelectValue placeholder="Select model" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72">
-              {MODELS.map((model) => (
-                <SelectItem key={model} value={model}>
-                  {model}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Count</span>
-          <Input
-            type="number"
-            min={1}
-            max={10}
-            value={generateCount}
-            onChange={(event) =>
-              setGenerateCount(() => {
-                const value = Number(event.target.value);
-                if (Number.isNaN(value)) return 1;
-                return Math.min(Math.max(value, 1), 10);
-              })
-            }
-            className="h-9 w-16"
-          />
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Temp</span>
-          <Input
-            type="number"
-            min={0}
-            max={2}
-            step={0.1}
-            value={isFixedTemperatureModel ? 1 : generateTemperature}
-            disabled={isFixedTemperatureModel}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (Number.isNaN(value)) {
-                setGenerateTemperature(DEFAULT_GENERATE_TEMPERATURE);
-                return;
-              }
-              setGenerateTemperature(() => Math.min(Math.max(value, 0), 2));
-            }}
-            className="h-9 w-20"
-          />
-          {isFixedTemperatureModel && (
-            <span className="text-xs text-muted-foreground">
-              Fixed at 1 for {generateModel}
-            </span>
-          )}
-        </div>
         <Button
           size="sm"
           variant={showMeta ? "default" : "outline"}
@@ -953,6 +960,121 @@ export default function ConvoTreePage() {
           {showMeta ? "Hide meta" : "Show meta"}
         </Button>
       </div>
+
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+            Response Models
+          </div>
+          <div className="border border-input rounded-lg overflow-hidden">
+            <div className="grid grid-cols-[1fr_150px_80px] items-center bg-muted px-4 py-2 text-sm font-medium uppercase tracking-wide">
+              <span>Model</span>
+              <span className="text-right"># Responses</span>
+              <span className="text-center">Actions</span>
+            </div>
+            {generateConfigs.map((config) => (
+              <div
+                key={config.id}
+                className="grid grid-cols-[1fr_150px_80px] items-center gap-2 border-t border-input px-4 py-3"
+              >
+                <Select
+                  value={config.model}
+                  onValueChange={(value) =>
+                    handleUpdateGenerateConfig(config.id, {
+                      model: value as ResponseModelValue,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {RESPONSE_MODEL_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  min={1}
+                  value={config.count}
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    handleUpdateGenerateConfig(config.id, {
+                      count: Number.isNaN(value)
+                        ? DEFAULT_GENERATE_COUNT
+                        : Math.max(Math.round(value), 1),
+                    });
+                  }}
+                  className="h-9"
+                />
+                <div className="flex justify-center">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveGenerateConfig(config.id)}
+                    disabled={generateConfigs.length === 1}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleAddGenerateConfig}
+            >
+              Add model
+            </Button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <span>Temp</span>
+            <Input
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              value={isFixedTemperatureModel ? 1 : generateTemperature}
+              disabled={isFixedTemperatureModel}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isNaN(value)) {
+                  setGenerateTemperature(DEFAULT_GENERATE_TEMPERATURE);
+                  return;
+                }
+                setGenerateTemperature(() =>
+                  Math.min(Math.max(value, 0), 2)
+                );
+              }}
+              className="h-9 w-20"
+            />
+          </div>
+          {isFixedTemperatureModel && (
+            <span className="text-xs text-muted-foreground">
+              Temperature fixed at 1 when GPT-5 models are selected.
+            </span>
+          )}
+        </div>
+      </div>
+
+      {runs.length === 0 && path.length === 1 && !path[0].selectedOption && (
+        <div className="rounded-lg border border-dashed bg-muted/20 p-10 text-center text-muted-foreground">
+          <p className="text-sm">
+            Add your first prompt to begin exploring branches, or load the
+            example conversation to see a filled-out tree.
+          </p>
+        </div>
+      )}
+
       <div className="space-y-6">
         {(() => {
           let previousCandidates: string[] | null = null;
@@ -983,8 +1105,10 @@ export default function ConvoTreePage() {
                   handleGenerateNext(
                     node,
                     option,
-                    generateModel,
-                    generateCount,
+                    generateConfigs.map(({ model, count }) => ({
+                      model,
+                      count,
+                    })),
                     generateTemperature
                   )
                 }
