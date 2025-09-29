@@ -6,7 +6,8 @@ import { z } from "zod";
 import { COOKIES } from "@/constants";
 import { anthropicComplete } from "./server/anthropic";
 import { xaiComplete } from "./server/xai";
-import { geminiComplete } from "./server/gemini";
+
+import { apiPath } from "@/lib/base-path";
 
 const normalizedTemperature = (model: string, temperature: number) =>
   model.startsWith("gpt-5") ? 1 : temperature;
@@ -153,13 +154,48 @@ async function completeWithGemini({
   maxTokens,
 }: ChatCompletionParams): Promise<string> {
   const { system, conversation } = splitSystemMessages(messages);
-  return geminiComplete({
-    model,
-    system,
-    temperature,
-    maxTokens,
-    conversation,
-  });
+  const apiKey = Cookies.get(COOKIES.GEMINI_API_KEY);
+
+  if (!apiKey) {
+    throw new Error("Missing Gemini API key. Store it on the settings page before using Gemini models.");
+  }
+
+  try {
+    const response = await fetch(apiPath("/api/ai/gemini"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Gemini-API-Key": apiKey,
+      },
+      body: JSON.stringify({
+        model,
+        system,
+        temperature,
+        maxTokens,
+        conversation,
+      }),
+    });
+
+    let payload: { ok?: boolean; text?: string; error?: string } | null = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || !payload?.ok || typeof payload.text !== "string") {
+      const message =
+        payload?.error ?? `Gemini completion failed with status ${response.status}`;
+      throw new Error(message);
+    }
+
+    return payload.text;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Gemini completion failed for an unknown reason.");
+  }
 }
 
 export async function generateChatCompletion(params: ChatCompletionParams): Promise<string> {
