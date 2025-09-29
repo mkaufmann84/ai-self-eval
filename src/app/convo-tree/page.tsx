@@ -35,6 +35,7 @@ import {
   RESPONSE_MODEL_OPTIONS,
   type ResponseModelValue,
 } from "@/lib/model-options";
+import { PRESETS } from "@/lib/presets";
 
 type Role = "user" | "assistant";
 
@@ -86,7 +87,7 @@ const sampleRuns: ConversationRun[] = [
         role: "assistant",
         content:
           "It succeeds because the latch transfers the load into the frame, which distributes stress evenly.",
-        model: "gpt-4o",
+        model: "chatgpt-4o-latest",
       },
       {
         role: "user",
@@ -96,7 +97,7 @@ const sampleRuns: ConversationRun[] = [
         role: "assistant",
         content:
           "Imagine the frame as a loop of helpers—each helper takes a small portion of the weight so no one breaks a sweat.",
-        model: "gpt-4o",
+        model: "chatgpt-4o-latest",
       },
     ],
   },
@@ -196,7 +197,7 @@ const sampleRuns: ConversationRun[] = [
         role: "assistant",
         content:
           "First, a sensor samples the input. A small controller compares it to the reference and instructs the actuator to adjust.",
-        model: "gpt-4o",
+        model: "chatgpt-4o-latest",
       },
       {
         role: "user",
@@ -206,7 +207,7 @@ const sampleRuns: ConversationRun[] = [
         role: "assistant",
         content:
           "Yes. The controller keeps a buffer of recent readings, so when it spots a spike it nudges the actuator in smaller, faster bursts.",
-        model: "gpt-4o",
+        model: "chatgpt-4o-latest",
       },
     ],
   },
@@ -236,10 +237,11 @@ const sampleRuns: ConversationRun[] = [
 
 const ROOT_KEY = "root";
 const DEFAULT_SYSTEM_PROMPT = "";
-const DEFAULT_GENERATE_MODEL: ResponseModelValue = "gpt-5";
-const ADDITIONAL_GENERATE_MODEL: ResponseModelValue = "gpt-4o";
+const DEFAULT_GENERATE_MODEL: ResponseModelValue = "gpt-5-chat-latest";
+const ADDITIONAL_GENERATE_MODEL: ResponseModelValue = "chatgpt-4o-latest";
 const DEFAULT_GENERATE_COUNT = 5;
 const DEFAULT_GENERATE_TEMPERATURE = 1.2;
+const NO_PRESET_VALUE = "__none";
 
 const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 
@@ -546,6 +548,9 @@ export default function ConvoTreePage() {
   }, []);
   const [showMeta, setShowMeta] = useState(true);
   const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
+  const [selectedPreset, setSelectedPreset] = useState<string | undefined>(
+    undefined
+  );
   const [generateConfigs, setGenerateConfigs] = useState<GenerateConfig[]>([
     {
       id: "config_0",
@@ -568,7 +573,44 @@ export default function ConvoTreePage() {
     }
   }, [isFixedTemperatureModel]);
 
+  const clearPresetSelection = useCallback(() => {
+    setSelectedPreset(undefined);
+  }, [setSelectedPreset]);
+
+  const handlePresetChange = useCallback(
+    (presetId: string | undefined) => {
+      setSelectedPreset(presetId);
+      if (!presetId) {
+        return;
+      }
+
+      const preset = PRESETS.find((candidate) => candidate.id === presetId);
+      if (!preset) {
+        return;
+      }
+
+      setGenerateConfigs(
+        preset.models.map((modelConfig, index) => ({
+          id: `preset_${preset.id}_${index}`,
+          model: modelConfig.response_model,
+          count: modelConfig.num_responses,
+        }))
+      );
+      generateConfigIdRef.current = preset.models.length;
+
+      if (preset.defaultResponseTemperature !== undefined) {
+        const nextTemperature = Math.min(
+          Math.max(preset.defaultResponseTemperature, 0),
+          2
+        );
+        setGenerateTemperature(nextTemperature);
+      }
+    },
+    [setGenerateConfigs, setGenerateTemperature, setSelectedPreset]
+  );
+
   const handleAddGenerateConfig = useCallback(() => {
+    clearPresetSelection();
     setGenerateConfigs((prev) => [
       ...prev,
       {
@@ -577,27 +619,29 @@ export default function ConvoTreePage() {
         count: DEFAULT_GENERATE_COUNT,
       },
     ]);
-  }, []);
+  }, [clearPresetSelection]);
 
   const handleUpdateGenerateConfig = useCallback(
     (id: string, updates: Partial<Omit<GenerateConfig, "id">>) => {
+      clearPresetSelection();
       setGenerateConfigs((prev) =>
         prev.map((config) =>
           config.id === id ? { ...config, ...updates } : config
         )
       );
     },
-    []
+    [clearPresetSelection]
   );
 
   const handleRemoveGenerateConfig = useCallback((id: string) => {
+    clearPresetSelection();
     setGenerateConfigs((prev) => {
       if (prev.length <= 1) {
         return prev;
       }
       return prev.filter((config) => config.id !== id);
     });
-  }, []);
+  }, [clearPresetSelection]);
 
   const tree = useMemo(() => buildConversationTree(runs), [runs]);
   const [selectedMap, setSelectedMap] = useState<Record<string, string>>({});
@@ -641,10 +685,12 @@ export default function ConvoTreePage() {
     pendingRunSelection.current = null;
     setRuns([]);
     setSelectedMap({});
+    clearPresetSelection();
   };
   const handleLoadExample = () => {
     pendingRunSelection.current = null;
     setRuns(sampleRuns);
+    clearPresetSelection();
   };
 
   const handleAddOption = (
@@ -963,6 +1009,40 @@ export default function ConvoTreePage() {
 
       <div className="space-y-4">
         <div className="space-y-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-6">
+            <div className="flex-1">
+              <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+                Model Presets (Optional)
+              </div>
+              <Select
+                value={selectedPreset}
+                onValueChange={(value) =>
+                  handlePresetChange(
+                    value === NO_PRESET_VALUE ? undefined : value
+                  )
+                }
+              >
+                <SelectTrigger className="w-full sm:w-80">
+                  <SelectValue placeholder="Select a preset to auto-fill models" />
+                </SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value={NO_PRESET_VALUE}>
+                    None (Manual selection)
+                  </SelectItem>
+                  {PRESETS.map((preset) => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      <div>
+                        <div className="font-medium">{preset.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {preset.description}
+                        </div>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
             Response Models
           </div>

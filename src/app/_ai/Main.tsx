@@ -47,6 +47,7 @@ import {
   RESPONSE_MODEL_OPTIONS,
   RESPONSE_MODEL_VALUES,
 } from "@/lib/model-options";
+import { PRESETS } from "@/lib/presets";
 
 interface InputContext {
   cM: React.MutableRefObject<CacheManager>;
@@ -369,6 +370,8 @@ function InputForm({
 }: {
   handleSubmit: (data: InputForm) => void;
 }) {
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
+
   const handleResize = (event: any) => {
     const textarea = event.target;
     textarea.style.height = "auto";
@@ -386,10 +389,29 @@ function InputForm({
       analysis_temperature: 0.0,
     },
   });
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, replace } = useFieldArray({
     control: form.control,
     name: "response_options",
   });
+
+  const handlePresetChange = (presetId: string) => {
+    setSelectedPreset(presetId);
+    if (!presetId) return;
+
+    const preset = PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    // Replace the response options with the preset models
+    replace(preset.models);
+
+    // Optionally set the temperatures if defined in the preset
+    if (preset.defaultResponseTemperature !== undefined) {
+      form.setValue("response_temperature", preset.defaultResponseTemperature);
+    }
+    if (preset.defaultAnalysisTemperature !== undefined) {
+      form.setValue("analysis_temperature", preset.defaultAnalysisTemperature);
+    }
+  };
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="px-4 py-4">
@@ -419,6 +441,30 @@ function InputForm({
         </div>
         <div className="flex gap-4 py-3 flex-col">
           <div className="space-y-2">
+            <div className="flex items-end gap-4 mb-4">
+              <div className="flex-1">
+                <FormLabel className="text-xl font-normal mb-2 block">
+                  Model Preset
+                </FormLabel>
+                <Select value={selectedPreset} onValueChange={handlePresetChange}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select preset to auto-fill models" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRESETS.map((preset) => (
+                      <SelectItem key={preset.id} value={preset.id}>
+                        <div>
+                          <div className="font-medium">{preset.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {preset.description}
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <FormLabel className="text-xl font-normal">Response Models</FormLabel>
             <div className="border border-input rounded-lg overflow-hidden">
               <div className="grid grid-cols-[1fr_150px_80px] items-center bg-muted px-4 py-2 text-sm font-medium uppercase tracking-wide">
