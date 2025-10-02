@@ -10,7 +10,7 @@ import { getNodeKey } from "./utils";
 
 export function buildConversationTree(
   runs: ConversationRun[],
-  rootKey: typeof ROOT_KEY
+  rootKey: string
 ): ConversationTree {
   const nodesById: Record<string, ConversationNode> = {};
   const layers: ConversationNode[][] = [];
