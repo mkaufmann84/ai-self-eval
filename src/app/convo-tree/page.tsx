@@ -416,6 +416,34 @@ function buildConversationTree(runs: ConversationRun[]): ConversationTree {
   return { nodesById, layers, rootKey: ROOT_KEY, maxDepth };
 }
 
+function computeFollowUpDepth(
+  nextPrefix: string,
+  tree: ConversationTree,
+  cache: Map<string, number> = new Map()
+): number {
+  if (cache.has(nextPrefix)) {
+    return cache.get(nextPrefix)!;
+  }
+
+  // Find node with matching prefixKey
+  const node = Object.values(tree.nodesById).find(
+    (n) => n.prefixKey === nextPrefix
+  );
+
+  if (!node || node.options.length === 0) {
+    cache.set(nextPrefix, 0);
+    return 0;
+  }
+
+  const maxChildDepth = Math.max(
+    ...node.options.map((opt) => computeFollowUpDepth(opt.nextPrefix, tree, cache))
+  );
+
+  const depth = 1 + maxChildDepth;
+  cache.set(nextPrefix, depth);
+  return depth;
+}
+
 function buildPath(
   tree: ConversationTree,
   selectedMap: Record<string, string>
@@ -644,6 +672,21 @@ export default function ConvoTreePage() {
   }, [clearPresetSelection]);
 
   const tree = useMemo(() => buildConversationTree(runs), [runs]);
+
+  const followUpDepthMap = useMemo(() => {
+    const map = new Map<string, number>();
+    const cache = new Map<string, number>();
+
+    // Compute depth for all option nextPrefixes
+    Object.values(tree.nodesById).forEach((node) => {
+      node.options.forEach((option) => {
+        map.set(option.nextPrefix, computeFollowUpDepth(option.nextPrefix, tree, cache));
+      });
+    });
+
+    return map;
+  }, [tree]);
+
   const [selectedMap, setSelectedMap] = useState<Record<string, string>>({});
   const pendingRunSelection = useRef<string | null>(null);
 
@@ -1168,6 +1211,7 @@ export default function ConvoTreePage() {
                 index={index}
                 total={path.length}
                 showMeta={showMeta}
+                followUpDepthMap={followUpDepthMap}
                 onSelectOption={handleSelectOption}
                 onAddOption={handleAddOption}
                 onAddNextTurn={handleAddNextTurn}
@@ -1206,6 +1250,7 @@ interface ConversationNodeCardProps {
   index: number;
   total: number;
   showMeta: boolean;
+  followUpDepthMap: Map<string, number>;
   onSelectOption: (node: ConversationNode, option: ConversationOption) => void;
   onAddOption: (
     node: ConversationNode,
@@ -1239,6 +1284,7 @@ function ConversationNodeCard({
   index,
   total,
   showMeta,
+  followUpDepthMap,
   onSelectOption,
   onAddOption,
   onAddNextTurn,
@@ -1326,6 +1372,7 @@ function ConversationNodeCard({
         <OptionSelector
           node={node}
           selectedOptionId={selectedOption?.id ?? null}
+          followUpDepthMap={followUpDepthMap}
           onSelectOption={(option) => onSelectOption(node, option)}
         />
         <div className="rounded-lg border border-border/60 bg-card p-4 text-sm leading-relaxed shadow-inner max-h-[min(800px,80vh)] overflow-auto">
@@ -1424,15 +1471,17 @@ function OptionControls({
 interface OptionSelectorProps {
   node: ConversationNode;
   selectedOptionId: string | null;
+  followUpDepthMap: Map<string, number>;
   onSelectOption: (option: ConversationOption) => void;
 }
 
 function OptionSelector({
   node,
   selectedOptionId,
+  followUpDepthMap,
   onSelectOption,
 }: OptionSelectorProps) {
-  if (node.options.length <= 1) {
+  if (node.options.length === 0) {
     return null;
   }
 
@@ -1443,18 +1492,24 @@ function OptionSelector({
           const isActive = selectedOptionId
             ? option.id === selectedOptionId
             : false;
+          const depth = followUpDepthMap.get(option.nextPrefix) ?? 0;
           return (
             <button
               key={option.id}
               onClick={() => onSelectOption(option)}
               className={cn(
-                "w-56 min-h-[112px] rounded-lg border px-4 py-3 text-left transition flex flex-col gap-2",
+                "relative w-56 min-h-[112px] rounded-lg border px-4 py-3 text-left transition flex flex-col gap-2",
                 "bg-muted",
                 isActive
                   ? "border-primary text-primary"
                   : "border-input text-foreground hover:border-primary/60"
               )}
             >
+              {depth > 0 && (
+                <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
+                  {depth}
+                </span>
+              )}
               <span
                 className="overflow-hidden text-left text-sm leading-snug flex-1"
                 style={{
