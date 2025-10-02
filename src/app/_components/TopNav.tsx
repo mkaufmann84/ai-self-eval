@@ -20,7 +20,9 @@ export default function TopNav({ className }: TopNavProps) {
   return (
     <nav className={cn("flex items-center gap-3 flex-wrap", className)}>
       {NAV_LINKS.map((link) => {
-        const isActive = pathname === link.href;
+        const isActive = link.href === "/"
+          ? pathname === "/"
+          : pathname.startsWith(link.href);
         return (
           <Link
             key={link.href}
