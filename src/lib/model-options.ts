@@ -9,7 +9,7 @@ export const RESPONSE_MODEL_VALUES = [
   "grok-4",
   "gemini-2.5-pro",
   "claude-opus-4-1-20250805",
-  "claude-sonnet-4-20250514",
+  "claude-sonnet-4-5-20250929",
 ] as const;
 
 export type ResponseModelValue = (typeof RESPONSE_MODEL_VALUES)[number];
@@ -25,7 +25,7 @@ const RESPONSE_MODEL_LABELS: Record<ResponseModelValue, string> = {
   "grok-4": "Grok 4",
   "gemini-2.5-pro": "Gemini 2.5 Pro",
   "claude-opus-4-1-20250805": "Claude Opus 4.1",
-  "claude-sonnet-4-20250514": "Claude Sonnet 4",
+  "claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
 };
 
 export const RESPONSE_MODEL_OPTIONS: ReadonlyArray<{

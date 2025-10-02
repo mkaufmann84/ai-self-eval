@@ -32,7 +32,7 @@ export default function RootLayout({
           themes={["light", "dark"]}
           attribute="data-theme"
         >
-          <div className="w-full bg-card h-16 flex justify-between py-2 px-[3vw] items-center">
+          <div className="w-full bg-card h-16 flex justify-between py-2 px-8 items-center">
             <div className="flex items-center gap-6">
               <h1 className="text-2xl font-bold">AI Self Eval</h1>
               <TopNav />
@@ -47,7 +47,7 @@ export default function RootLayout({
               <ChangeThemeButton />
             </div>
           </div>
-          <div className="pt-10 sm:px-[8vw] px-[2vw]">{children}</div>
+          <div className="pt-10 px-8">{children}</div>
         </ThemeProvider>
       </body>
     </html>

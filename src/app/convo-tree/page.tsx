@@ -1256,34 +1256,69 @@ function ConversationNodeCard({
 
   return (
     <div className="relative rounded-xl border border-border/70 bg-muted p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Turn {index + 1} of {total} · {friendlyRoleLabel(node.role)}
-          </h2>
-          {showMeta && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {node.options.length} option
-              {node.options.length === 1 ? "" : "s"} over {uniqueRunCount(node)}{" "}
-              conversation run
-              {uniqueRunCount(node) === 1 ? "" : "s"}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <OptionControls
-            node={node}
-            selectedIndex={selectedIndex}
-            onSelectOption={(option) => onSelectOption(node, option)}
-          />
-          <AddMessageButton
-            label="Add option"
-            title={`Add ${friendlyRoleLabel(node.role)} option`}
-            description={`Create another ${friendlyRoleLabel(
-              node.role
-            )} message for this turn.`}
-            onSubmit={(value) => onAddOption(node, value)}
-          />
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {nextRole(node.role) === "assistant" && selectedOption && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onGenerateNext(node, selectedOption)}
+                disabled={isGenerating}
+              >
+                {isGenerating ? "Generating…" : "Generate"}
+              </Button>
+            )}
+            {nextRole(node.role) === "user" && (
+              <AddMessageButton
+                label="Add user"
+                title="Add user turn"
+                description="Extend the conversation with a user message."
+                onSubmit={(value) => onAddNextTurn(node, selectedOption, value)}
+                disabled={!hasOptions || !selectedOption || isGenerating}
+              />
+            )}
+            {selectedOption && activeRunId && (
+              <AddMessageButton
+                label="Edit"
+                title={`Edit ${friendlyRoleLabel(node.role)} message`}
+                description="Update the content for this branch without creating a new option."
+                defaultValue={selectedOption.content}
+                submitLabel="Update"
+                onSubmit={(value) =>
+                  onEditNode(node, selectedOption, activeRunId, value)
+                }
+                disabled={isGenerating}
+              />
+            )}
+            {runCandidates.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onPruneNode(runCandidates)}
+                disabled={isGenerating}
+                className="text-destructive hover:text-destructive"
+              >
+                Prune
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <OptionControls
+              node={node}
+              selectedIndex={selectedIndex}
+              onSelectOption={(option) => onSelectOption(node, option)}
+            />
+            <AddMessageButton
+              label="Add option"
+              title={`Add ${friendlyRoleLabel(node.role)} option`}
+              description={`Create another ${friendlyRoleLabel(
+                node.role
+              )} message for this turn.`}
+              onSubmit={(value) => onAddOption(node, value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -1293,7 +1328,7 @@ function ConversationNodeCard({
           selectedOptionId={selectedOption?.id ?? null}
           onSelectOption={(option) => onSelectOption(node, option)}
         />
-        <div className="rounded-lg border border-border/60 bg-card p-4 text-sm leading-relaxed shadow-inner">
+        <div className="rounded-lg border border-border/60 bg-card p-4 text-sm leading-relaxed shadow-inner max-h-[min(800px,80vh)] overflow-auto">
           {hasOptions && selectedOption ? (
             <div className="space-y-3">
               <p className="whitespace-pre-wrap">{selectedOption.content}</p>
@@ -1310,50 +1345,6 @@ function ConversationNodeCard({
             <p className="text-sm text-muted-foreground">
               No options yet. Add one to start branching this turn.
             </p>
-          )}
-        </div>
-        <div className="flex justify-end gap-2">
-          {nextRole(node.role) === "assistant" && selectedOption && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => onGenerateNext(node, selectedOption)}
-              disabled={isGenerating}
-            >
-              {isGenerating ? "Generating…" : "Generate response"}
-            </Button>
-          )}
-          <AddMessageButton
-            label={`Add next ${friendlyRoleLabel(nextRole(node.role))}`}
-            title={`Add ${friendlyRoleLabel(nextRole(node.role))} turn`}
-            description={`Extend the conversation after this ${friendlyRoleLabel(
-              node.role
-            )} message.`}
-            onSubmit={(value) => onAddNextTurn(node, selectedOption, value)}
-            disabled={!hasOptions || !selectedOption || isGenerating}
-          />
-          {selectedOption && activeRunId && (
-            <AddMessageButton
-              label="Edit message"
-              title={`Edit ${friendlyRoleLabel(node.role)} message`}
-              description="Update the content for this branch without creating a new option."
-              defaultValue={selectedOption.content}
-              submitLabel="Update"
-              onSubmit={(value) =>
-                onEditNode(node, selectedOption, activeRunId, value)
-              }
-              disabled={isGenerating}
-            />
-          )}
-          {runCandidates.length > 0 && (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => onPruneNode(runCandidates)}
-              disabled={isGenerating}
-            >
-              Prune branch
-            </Button>
           )}
         </div>
       </div>

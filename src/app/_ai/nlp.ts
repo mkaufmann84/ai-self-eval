@@ -9,8 +9,18 @@ import { xaiComplete } from "./server/xai";
 
 import { apiPath } from "@/lib/base-path";
 
-const normalizedTemperature = (model: string, temperature: number) =>
-  model.startsWith("gpt-5") ? 1 : temperature;
+const normalizedTemperature = (model: string, temperature: number) => {
+  // GPT-5 models have a fixed temperature of 1
+  if (model.startsWith("gpt-5")) return 1;
+
+  // Anthropic models have a max temperature of 1
+  if (model.startsWith("claude")) {
+    return Math.min(temperature, 1);
+  }
+
+  // Other models use the provided temperature
+  return temperature;
+};
 
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -105,9 +115,11 @@ async function completeWithOpenAI({
     ...conversation.map((turn) => ({ role: turn.role, content: turn.content })),
   ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
 
+  const safeTemperature = temperature !== undefined ? normalizedTemperature(model, temperature) : undefined;
+
   const response = await client.chat.completions.create({
     model,
-    temperature,
+    temperature: safeTemperature,
     max_tokens: maxTokens,
     messages: payload,
   });
@@ -122,10 +134,11 @@ async function completeWithAnthropic({
   maxTokens,
 }: ChatCompletionParams): Promise<string> {
   const { system, conversation } = splitSystemMessages(messages);
+  const safeTemperature = temperature !== undefined ? normalizedTemperature(model, temperature) : undefined;
   return anthropicComplete({
     model,
     system,
-    temperature,
+    temperature: safeTemperature,
     maxTokens,
     conversation,
   });
@@ -225,10 +238,11 @@ export async function streamChatCompletion(
       ...(system ? [{ role: "system", content: system }] : []),
       ...conversation.map((turn) => ({ role: turn.role, content: turn.content })),
     ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+    const safeTemperature = params.temperature !== undefined ? normalizedTemperature(params.model, params.temperature) : undefined;
     const stream = await client.chat.completions.create({
       model: params.model,
       messages: payload,
-      temperature: params.temperature,
+      temperature: safeTemperature,
       max_tokens: params.maxTokens,
       stream: true,
     });

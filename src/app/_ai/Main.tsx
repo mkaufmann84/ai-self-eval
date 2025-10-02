@@ -385,7 +385,7 @@ function InputForm({
         { response_model: "gpt-5", num_responses: 5 },
       ],
       analysis_model: "gpt-4o-mini",
-      response_temperature: 1.2,
+      response_temperature: 1.0,
       analysis_temperature: 0.0,
     },
   });
