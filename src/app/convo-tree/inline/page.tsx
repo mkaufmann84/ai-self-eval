@@ -31,10 +31,19 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { generateChatCompletion, type ChatMessage } from "@/app/_ai/nlp";
+import {
+  generateChatCompletion,
+  createRubric,
+  promptSystemAnalysis,
+  messageScore,
+  validateAndConvert,
+  type ChatMessage,
+} from "@/app/_ai/nlp";
 import {
   RESPONSE_MODEL_OPTIONS,
+  ANALYSIS_MODEL_OPTIONS,
   type ResponseModelValue,
+  type AnalysisModelValue,
 } from "@/lib/model-options";
 import { PRESETS } from "@/lib/presets";
 
@@ -62,6 +71,7 @@ import {
   generateRunId,
   turnsEqual,
 } from "../_shared/utils";
+import { EvaluationDialog } from "./EvaluationDialog";
 
 const sampleRuns: ConversationRun[] = [
   {
@@ -233,6 +243,12 @@ const normalizedTemperatureForModel = (
 ) =>
   model.startsWith("gpt-5") ? 1 : temperature;
 
+const normalizedTemperatureForAnalysis = (
+  model: string,
+  temperature: number
+) =>
+  model.startsWith("gpt-5") ? 1 : temperature;
+
 interface GenerateConfig {
   id: string;
   model: ResponseModelValue;
@@ -358,6 +374,20 @@ export default function ConvoTreePage() {
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>(
     undefined
   );
+
+  // Evaluation state
+  interface NodeEvaluation {
+    rubric: string | null;
+    isGeneratingRubric: boolean;
+    evaluations: Map<
+      string,
+      { optionId: string; score: number | null; analysis: string; isGenerating: boolean }
+    >;
+  }
+  const [nodeEvaluations, setNodeEvaluations] = useState<Map<string, NodeEvaluation>>(
+    new Map()
+  );
+  const [evaluatingNodeId, setEvaluatingNodeId] = useState<string | null>(null);
   const [generateConfigs, setGenerateConfigs] = useState<GenerateConfig[]>([
     {
       id: "config_0",
@@ -369,6 +399,7 @@ export default function ConvoTreePage() {
   const [generateTemperature, setGenerateTemperature] = useState<number>(
     DEFAULT_GENERATE_TEMPERATURE
   );
+  const [evaluationModel, setEvaluationModel] = useState<AnalysisModelValue>("gpt-5-mini");
   const isFixedTemperatureModel = useMemo(
     () => generateConfigs.some((config) => config.model.startsWith("gpt-5")),
     [generateConfigs]
@@ -802,6 +833,159 @@ export default function ConvoTreePage() {
     });
   };
 
+  const handleEvaluateOptions = async (node: ConversationNode) => {
+    if (node.options.length === 0) return;
+
+    // Get conversation context up to this node
+    const contextTurns = collectTurnsUpToDepth(tree, selectedMap, node.depth, runs);
+    if (!contextTurns) return;
+
+    const conversationContext = contextTurns
+      .map((turn) => `${turn.role}: ${turn.content}`)
+      .join("\n\n");
+
+    const evaluationPrompt = `Given this conversation context:\n\n${conversationContext}\n\nEvaluate the following ${node.role} responses.`;
+
+    // Initialize node evaluation if it doesn't exist
+    setNodeEvaluations((prev) => {
+      const next = new Map(prev);
+      if (!next.has(node.id)) {
+        next.set(node.id, {
+          rubric: null,
+          isGeneratingRubric: true,
+          evaluations: new Map(),
+        });
+      } else {
+        const existing = next.get(node.id)!;
+        next.set(node.id, {
+          ...existing,
+          isGeneratingRubric: true,
+        });
+      }
+      return next;
+    });
+
+    try {
+      // Generate rubric
+      const rubric = await createRubric(
+        evaluationPrompt,
+        evaluationModel,
+        normalizedTemperatureForAnalysis(evaluationModel, 0.0)
+      );
+
+      setNodeEvaluations((prev) => {
+        const next = new Map(prev);
+        const nodeEval = next.get(node.id)!;
+        next.set(node.id, {
+          ...nodeEval,
+          rubric,
+          isGeneratingRubric: false,
+        });
+        return next;
+      });
+
+      // Evaluate each option
+      for (const option of node.options) {
+        setNodeEvaluations((prev) => {
+          const next = new Map(prev);
+          const nodeEval = next.get(node.id)!;
+          const evals = new Map(nodeEval.evaluations);
+          evals.set(option.id, {
+            optionId: option.id,
+            score: null,
+            analysis: "",
+            isGenerating: true,
+          });
+          next.set(node.id, { ...nodeEval, evaluations: evals });
+          return next;
+        });
+
+        try {
+          const analysisMessages: ChatMessage[] = [
+            { role: "system", content: promptSystemAnalysis(rubric) },
+            { role: "user", content: option.content },
+          ];
+
+          const analysis = await generateChatCompletion({
+            model: evaluationModel,
+            messages: analysisMessages,
+            temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
+          });
+
+          const scoreMessages: ChatMessage[] = [
+            ...analysisMessages,
+            { role: "assistant", content: analysis },
+            {
+              role: "user",
+              content: `Based on your analysis, provide a score from 0-100. Return ONLY a JSON object with format: {"score": <number>}`,
+            },
+          ];
+
+          const scoreResponse = await generateChatCompletion({
+            model: evaluationModel,
+            messages: scoreMessages,
+            temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
+          });
+
+          let score = 0;
+          try {
+            const parsed = JSON.parse(scoreResponse);
+            score = validateAndConvert(parsed.score);
+          } catch (parseError) {
+            console.error("Failed to parse score", { scoreResponse, parseError });
+            // Try to extract number from response
+            const match = scoreResponse.match(/\d+/);
+            if (match) {
+              score = validateAndConvert(match[0]);
+            } else {
+              score = 0;
+            }
+          }
+
+          setNodeEvaluations((prev) => {
+            const next = new Map(prev);
+            const nodeEval = next.get(node.id)!;
+            const evals = new Map(nodeEval.evaluations);
+            evals.set(option.id, {
+              optionId: option.id,
+              score,
+              analysis,
+              isGenerating: false,
+            });
+            next.set(node.id, { ...nodeEval, evaluations: evals });
+            return next;
+          });
+        } catch (error) {
+          console.error("Failed to evaluate option", { option, error });
+          setNodeEvaluations((prev) => {
+            const next = new Map(prev);
+            const nodeEval = next.get(node.id)!;
+            const evals = new Map(nodeEval.evaluations);
+            evals.set(option.id, {
+              optionId: option.id,
+              score: 0,
+              analysis: "Failed to generate analysis",
+              isGenerating: false,
+            });
+            next.set(node.id, { ...nodeEval, evaluations: evals });
+            return next;
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Failed to generate rubric", error);
+      setNodeEvaluations((prev) => {
+        const next = new Map(prev);
+        const nodeEval = next.get(node.id)!;
+        next.set(node.id, {
+          ...nodeEval,
+          isGeneratingRubric: false,
+        });
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="space-y-2">
@@ -987,6 +1171,24 @@ export default function ConvoTreePage() {
               Temperature fixed at 1 when GPT-5 models are selected.
             </span>
           )}
+          <div className="flex items-center gap-2">
+            <span>Evaluation Model</span>
+            <Select
+              value={evaluationModel}
+              onValueChange={(value) => setEvaluationModel(value as AnalysisModelValue)}
+            >
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ANALYSIS_MODEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
       <div className="space-y-6 pb-32">
@@ -1036,6 +1238,10 @@ export default function ConvoTreePage() {
                   )
                 }
                 runCandidates={runCandidates}
+                onEvaluateOptions={handleEvaluateOptions}
+                nodeEvaluation={nodeEvaluations.get(step.node.id)}
+                evaluatingNodeId={evaluatingNodeId}
+                setEvaluatingNodeId={setEvaluatingNodeId}
               />
             );
           });
@@ -1077,6 +1283,17 @@ interface ConversationNodeCardProps {
   onPruneNode: (runIds: string[]) => void;
   isGenerating: boolean;
   runCandidates: string[];
+  onEvaluateOptions: (node: ConversationNode) => Promise<void>;
+  nodeEvaluation?: {
+    rubric: string | null;
+    isGeneratingRubric: boolean;
+    evaluations: Map<
+      string,
+      { optionId: string; score: number | null; analysis: string; isGenerating: boolean }
+    >;
+  };
+  evaluatingNodeId: string | null;
+  setEvaluatingNodeId: (id: string | null) => void;
 }
 
 function ConversationNodeCard({
@@ -1094,6 +1311,10 @@ function ConversationNodeCard({
   onPruneNode,
   isGenerating,
   runCandidates,
+  onEvaluateOptions,
+  nodeEvaluation,
+  evaluatingNodeId,
+  setEvaluatingNodeId,
 }: ConversationNodeCardProps) {
   const selectedIndex = selectedOption
     ? node.options.findIndex((opt) => opt.id === selectedOption.id)
@@ -1149,6 +1370,16 @@ function ConversationNodeCard({
                 Prune
               </Button>
             )}
+            {node.options.length > 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEvaluatingNodeId(node.id)}
+                disabled={isGenerating}
+              >
+                Evaluate Options
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -1175,6 +1406,7 @@ function ConversationNodeCard({
           selectedOptionId={selectedOption?.id ?? null}
           followUpDepthMap={followUpDepthMap}
           onSelectOption={(option) => onSelectOption(node, option)}
+          nodeEvaluation={nodeEvaluation}
         />
         <div className="rounded-lg border border-border/60 bg-card p-4 text-sm leading-relaxed shadow-inner max-h-[min(800px,80vh)] overflow-auto">
           {hasOptions && selectedOption ? (
@@ -1196,6 +1428,21 @@ function ConversationNodeCard({
           )}
         </div>
       </div>
+
+      <EvaluationDialog
+        open={evaluatingNodeId === node.id}
+        onOpenChange={(open) => {
+          if (!open) setEvaluatingNodeId(null);
+        }}
+        options={node.options}
+        evaluations={nodeEvaluation?.evaluations ?? new Map()}
+        rubric={nodeEvaluation?.rubric ?? null}
+        isGeneratingRubric={nodeEvaluation?.isGeneratingRubric ?? false}
+        onEvaluate={() => onEvaluateOptions(node)}
+        onSelectOption={(option) => {
+          onSelectOption(node, option);
+        }}
+      />
     </div>
   );
 }
@@ -1274,6 +1521,14 @@ interface OptionSelectorProps {
   selectedOptionId: string | null;
   followUpDepthMap: Map<string, number>;
   onSelectOption: (option: ConversationOption) => void;
+  nodeEvaluation?: {
+    rubric: string | null;
+    isGeneratingRubric: boolean;
+    evaluations: Map<
+      string,
+      { optionId: string; score: number | null; analysis: string; isGenerating: boolean }
+    >;
+  };
 }
 
 function OptionSelector({
@@ -1281,10 +1536,26 @@ function OptionSelector({
   selectedOptionId,
   followUpDepthMap,
   onSelectOption,
+  nodeEvaluation,
 }: OptionSelectorProps) {
   if (node.options.length === 0) {
     return null;
   }
+
+  const calculateColor = (value: number) => {
+    let r = (100 - value) * 2.0;
+    let g = value * 2.0;
+    let b = 0;
+
+    r = Math.round(r);
+    g = Math.round(g);
+
+    let hexR = r.toString(16).padStart(2, "0");
+    let hexG = g.toString(16).padStart(2, "0");
+    let hexB = b.toString(16).padStart(2, "0");
+
+    return `#${hexR}${hexG}${hexB}`;
+  };
 
   return (
     <ScrollArea className="w-full whitespace-nowrap">
@@ -1294,6 +1565,10 @@ function OptionSelector({
             ? option.id === selectedOptionId
             : false;
           const depth = followUpDepthMap.get(option.nextPrefix) ?? 0;
+          const evaluation = nodeEvaluation?.evaluations.get(option.id);
+          const score = evaluation?.score;
+          const hasScore = score !== null && score !== undefined;
+
           return (
             <button
               key={option.id}
@@ -1306,11 +1581,22 @@ function OptionSelector({
                   : "border-input text-foreground hover:border-primary/60"
               )}
             >
-              {depth > 0 && (
+              {/* Score badge or depth badge */}
+              {hasScore ? (
+                <div
+                  className="absolute top-2 right-2 w-8 h-8 border-[2px] flex justify-center items-center rounded-full bg-card font-bold text-xs"
+                  style={{
+                    color: calculateColor(score),
+                    borderColor: calculateColor(score),
+                  }}
+                >
+                  {score}
+                </div>
+              ) : depth > 0 ? (
                 <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-semibold text-primary-foreground">
                   {depth}
                 </span>
-              )}
+              ) : null}
               <span
                 className="overflow-hidden text-left text-sm leading-snug flex-1"
                 style={{

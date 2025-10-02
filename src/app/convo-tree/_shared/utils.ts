@@ -1,4 +1,4 @@
-import type { Role, RunTurn } from "./types";
+import type { Role, RunTurn } from "./definitions";
 
 export const getNodeKey = (depth: number, prefix: string) => `${depth}-${prefix}`;
 

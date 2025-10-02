@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
-  { href: "/", label: "Analysis" },
+  { href: "/analysis", label: "Analysis" },
   { href: "/convo-tree", label: "Convo Tree" },
   { href: "/settings", label: "Settings" },
 ];
@@ -20,9 +20,7 @@ export default function TopNav({ className }: TopNavProps) {
   return (
     <nav className={cn("flex items-center gap-3 flex-wrap", className)}>
       {NAV_LINKS.map((link) => {
-        const isActive = link.href === "/"
-          ? pathname === "/"
-          : pathname.startsWith(link.href);
+        const isActive = pathname.startsWith(link.href);
         return (
           <Link
             key={link.href}

@@ -1,6 +1,5 @@
-"use client";
-import Main from "./_ai/Main";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <Main />;
+  redirect("/analysis");
 }

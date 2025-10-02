@@ -30,7 +30,7 @@ export function buildConversationTree(
   let maxDepth = 1;
 
   runs.forEach((run) => {
-    let prefix = rootKey;
+    let prefix: string = rootKey;
     run.turns.forEach((turn, index) => {
       const nodeKey = getNodeKey(index, prefix);
       let node = seen.get(nodeKey);
