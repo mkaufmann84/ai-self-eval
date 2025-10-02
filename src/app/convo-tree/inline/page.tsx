@@ -833,156 +833,140 @@ export default function ConvoTreePage() {
     });
   };
 
-  const handleEvaluateOptions = async (node: ConversationNode) => {
-    if (node.options.length === 0) return;
-
-    // Get conversation context up to this node
-    const contextTurns = collectTurnsUpToDepth(tree, selectedMap, node.depth, runs);
-    if (!contextTurns) return;
-
+  // Helper: Generate rubric for evaluation
+  const generateRubric = async (contextTurns: RunTurn[], nodeRole: Role) => {
     const conversationContext = contextTurns
       .map((turn) => `${turn.role}: ${turn.content}`)
       .join("\n\n");
+    const evaluationPrompt = `Given this conversation context:\n\n${conversationContext}\n\nEvaluate the following ${nodeRole} responses.`;
 
-    const evaluationPrompt = `Given this conversation context:\n\n${conversationContext}\n\nEvaluate the following ${node.role} responses.`;
+    return await createRubric(
+      evaluationPrompt,
+      evaluationModel,
+      normalizedTemperatureForAnalysis(evaluationModel, 0.0)
+    );
+  };
 
-    // Initialize node evaluation if it doesn't exist
-    setNodeEvaluations((prev) => {
-      const next = new Map(prev);
-      if (!next.has(node.id)) {
-        next.set(node.id, {
-          rubric: null,
-          isGeneratingRubric: true,
-          evaluations: new Map(),
-        });
-      } else {
-        const existing = next.get(node.id)!;
-        next.set(node.id, {
-          ...existing,
-          isGeneratingRubric: true,
-        });
-      }
-      return next;
+  // Helper: Evaluate a single option and return score + analysis
+  const evaluateSingleOption = async (
+    rubric: string,
+    optionContent: string
+  ): Promise<{ score: number; analysis: string }> => {
+    const analysisMessages: ChatMessage[] = [
+      { role: "system", content: promptSystemAnalysis(rubric) },
+      { role: "user", content: optionContent },
+    ];
+
+    const analysis = await generateChatCompletion({
+      model: evaluationModel,
+      messages: analysisMessages,
+      temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
     });
 
+    const scoreMessages: ChatMessage[] = [
+      ...analysisMessages,
+      { role: "assistant", content: analysis },
+      {
+        role: "user",
+        content: `Based on your analysis, provide a score from 0-100. Return ONLY a JSON object with format: {"score": <number>}`,
+      },
+    ];
+
+    const scoreResponse = await generateChatCompletion({
+      model: evaluationModel,
+      messages: scoreMessages,
+      temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
+    });
+
+    let score = 0;
     try {
-      // Generate rubric
-      const rubric = await createRubric(
-        evaluationPrompt,
-        evaluationModel,
-        normalizedTemperatureForAnalysis(evaluationModel, 0.0)
-      );
+      const parsed = JSON.parse(scoreResponse);
+      score = validateAndConvert(parsed.score);
+    } catch (parseError) {
+      console.error("Failed to parse score", { scoreResponse, parseError });
+      const match = scoreResponse.match(/\d+/);
+      score = match ? validateAndConvert(match[0]) : 0;
+    }
 
-      setNodeEvaluations((prev) => {
-        const next = new Map(prev);
-        const nodeEval = next.get(node.id)!;
-        next.set(node.id, {
-          ...nodeEval,
-          rubric,
-          isGeneratingRubric: false,
-        });
-        return next;
-      });
+    return { score, analysis };
+  };
 
-      // Evaluate each option
+  // Helper: Update evaluation state
+  const updateNodeEvaluation = (
+    nodeId: string,
+    updates: Partial<NodeEvaluation> | ((prev: NodeEvaluation) => NodeEvaluation)
+  ) => {
+    setNodeEvaluations((prev) => {
+      const next = new Map(prev);
+      const current = next.get(nodeId) || {
+        rubric: null,
+        isGeneratingRubric: false,
+        evaluations: new Map(),
+      };
+      const updated = typeof updates === "function" ? updates(current) : { ...current, ...updates };
+      next.set(nodeId, updated);
+      return next;
+    });
+  };
+
+  // Main handler: Orchestrates evaluation
+  const handleEvaluateOptions = async (node: ConversationNode) => {
+    if (node.options.length === 0) return;
+
+    const contextTurns = collectTurnsUpToDepth(tree, selectedMap, node.depth, runs);
+    if (!contextTurns) return;
+
+    // Initialize/reset state
+    updateNodeEvaluation(node.id, { isGeneratingRubric: true });
+
+    try {
+      // Step 1: Generate rubric
+      const rubric = await generateRubric(contextTurns, node.role);
+      updateNodeEvaluation(node.id, { rubric, isGeneratingRubric: false });
+
+      // Step 2: Evaluate each option
       for (const option of node.options) {
-        setNodeEvaluations((prev) => {
-          const next = new Map(prev);
-          const nodeEval = next.get(node.id)!;
-          const evals = new Map(nodeEval.evaluations);
+        updateNodeEvaluation(node.id, (prev) => {
+          const evals = new Map(prev.evaluations);
           evals.set(option.id, {
             optionId: option.id,
             score: null,
             analysis: "",
             isGenerating: true,
           });
-          next.set(node.id, { ...nodeEval, evaluations: evals });
-          return next;
+          return { ...prev, evaluations: evals };
         });
 
         try {
-          const analysisMessages: ChatMessage[] = [
-            { role: "system", content: promptSystemAnalysis(rubric) },
-            { role: "user", content: option.content },
-          ];
+          const { score, analysis } = await evaluateSingleOption(rubric, option.content);
 
-          const analysis = await generateChatCompletion({
-            model: evaluationModel,
-            messages: analysisMessages,
-            temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
-          });
-
-          const scoreMessages: ChatMessage[] = [
-            ...analysisMessages,
-            { role: "assistant", content: analysis },
-            {
-              role: "user",
-              content: `Based on your analysis, provide a score from 0-100. Return ONLY a JSON object with format: {"score": <number>}`,
-            },
-          ];
-
-          const scoreResponse = await generateChatCompletion({
-            model: evaluationModel,
-            messages: scoreMessages,
-            temperature: normalizedTemperatureForAnalysis(evaluationModel, 0.0),
-          });
-
-          let score = 0;
-          try {
-            const parsed = JSON.parse(scoreResponse);
-            score = validateAndConvert(parsed.score);
-          } catch (parseError) {
-            console.error("Failed to parse score", { scoreResponse, parseError });
-            // Try to extract number from response
-            const match = scoreResponse.match(/\d+/);
-            if (match) {
-              score = validateAndConvert(match[0]);
-            } else {
-              score = 0;
-            }
-          }
-
-          setNodeEvaluations((prev) => {
-            const next = new Map(prev);
-            const nodeEval = next.get(node.id)!;
-            const evals = new Map(nodeEval.evaluations);
+          updateNodeEvaluation(node.id, (prev) => {
+            const evals = new Map(prev.evaluations);
             evals.set(option.id, {
               optionId: option.id,
               score,
               analysis,
               isGenerating: false,
             });
-            next.set(node.id, { ...nodeEval, evaluations: evals });
-            return next;
+            return { ...prev, evaluations: evals };
           });
         } catch (error) {
           console.error("Failed to evaluate option", { option, error });
-          setNodeEvaluations((prev) => {
-            const next = new Map(prev);
-            const nodeEval = next.get(node.id)!;
-            const evals = new Map(nodeEval.evaluations);
+          updateNodeEvaluation(node.id, (prev) => {
+            const evals = new Map(prev.evaluations);
             evals.set(option.id, {
               optionId: option.id,
               score: 0,
               analysis: "Failed to generate analysis",
               isGenerating: false,
             });
-            next.set(node.id, { ...nodeEval, evaluations: evals });
-            return next;
+            return { ...prev, evaluations: evals };
           });
         }
       }
     } catch (error) {
       console.error("Failed to generate rubric", error);
-      setNodeEvaluations((prev) => {
-        const next = new Map(prev);
-        const nodeEval = next.get(node.id)!;
-        next.set(node.id, {
-          ...nodeEval,
-          isGeneratingRubric: false,
-        });
-        return next;
-      });
+      updateNodeEvaluation(node.id, { isGeneratingRubric: false });
     }
   };
 
