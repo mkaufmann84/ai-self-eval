@@ -27,7 +27,7 @@ export type ChatMessage = {
   content: string;
 };
 
-type Provider = "openai" | "anthropic" | "xai" | "gemini";
+type Provider = "openai" | "anthropic" | "xai" | "gemini" | "openrouter";
 
 type ConversationTurn = {
   role: "user" | "assistant";
@@ -67,6 +67,9 @@ function resolveProvider(model: string): Provider {
   if (model.startsWith("claude")) return "anthropic";
   if (model.startsWith("grok")) return "xai";
   if (model.startsWith("gemini")) return "gemini";
+  if (model.startsWith("glm")) return "openrouter";
+  if (model.startsWith("deepseek")) return "openrouter";
+  if (model.startsWith("qwen")) return "openrouter";
   return "openai";
 }
 
@@ -211,6 +214,50 @@ async function completeWithGemini({
   }
 }
 
+async function completeWithOpenRouter({
+  model,
+  messages,
+  temperature,
+  maxTokens,
+}: ChatCompletionParams): Promise<string> {
+  const apiKey = Cookies.get(COOKIES.OPENROUTER_API_KEY);
+
+  if (!apiKey) {
+    throw new Error("Missing OpenRouter API key. Store it on the settings page before using GLM models.");
+  }
+
+  const client = new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    ...OPENAI_BROWSER_OPTIONS,
+  });
+
+  const { system, conversation } = splitSystemMessages(messages);
+  const payload = [
+    ...(system ? [{ role: "system", content: system }] : []),
+    ...conversation.map((turn) => ({ role: turn.role, content: turn.content })),
+  ] as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+  // Map model names to OpenRouter format
+  let openRouterModel = model;
+  if (model.startsWith("glm")) {
+    openRouterModel = `z-ai/${model}`;
+  } else if (model === "deepseek-v3.1") {
+    openRouterModel = "deepseek/deepseek-chat-v3.1";
+  } else if (model === "qwen3-max") {
+    openRouterModel = "qwen/qwen3-max";
+  }
+
+  const response = await client.chat.completions.create({
+    model: openRouterModel,
+    messages: payload,
+    temperature,
+    max_tokens: maxTokens,
+  });
+
+  return response.choices?.[0]?.message?.content?.trim() ?? "";
+}
+
 export async function generateChatCompletion(params: ChatCompletionParams): Promise<string> {
   const provider = resolveProvider(params.model);
   switch (provider) {
@@ -222,6 +269,8 @@ export async function generateChatCompletion(params: ChatCompletionParams): Prom
       return completeWithXAI(params);
     case "gemini":
       return completeWithGemini(params);
+    case "openrouter":
+      return completeWithOpenRouter(params);
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
@@ -281,6 +330,9 @@ export async function streamChatCompletion(
       break;
     case "gemini":
       text = await completeWithGemini(params);
+      break;
+    case "openrouter":
+      text = await completeWithOpenRouter(params);
       break;
     default:
       throw new Error(`Unsupported provider for streaming: ${provider}`);

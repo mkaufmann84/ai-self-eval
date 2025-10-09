@@ -16,7 +16,7 @@ const formSchema = z.object({
 });
 type FormSchema = z.infer<typeof formSchema>;
 
-type Provider = "openai" | "anthropic" | "xai" | "gemini";
+type Provider = "openai" | "anthropic" | "xai" | "gemini" | "openrouter";
 
 interface ApiKeyFormProps {
   label: string;
@@ -197,6 +197,13 @@ export default function StoreApiKey() {
         placeholder="AIza..."
         cookieKey="GEMINI_API_KEY"
         provider="gemini"
+      />
+      <ApiKeyForm
+        label="OpenRouter API Key"
+        description="Stored locally and used for GLM models via OpenRouter."
+        placeholder="sk-or-v1-..."
+        cookieKey="OPENROUTER_API_KEY"
+        provider="openrouter"
       />
     </div>
   );

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-type Provider = "openai" | "anthropic" | "xai" | "gemini";
+type Provider = "openai" | "anthropic" | "xai" | "gemini" | "openrouter";
 
 const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL ?? "https://api.openai.com";
 const ANTHROPIC_BASE_URL =
@@ -8,6 +8,7 @@ const ANTHROPIC_BASE_URL =
 const ANTHROPIC_VERSION = process.env.ANTHROPIC_VERSION ?? "2023-06-01";
 const XAI_BASE_URL = process.env.XAI_BASE_URL ?? "https://api.x.ai";
 const GEMINI_BASE_URL = process.env.GEMINI_BASE_URL ?? "https://generativelanguage.googleapis.com";
+const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai";
 
 async function fetchJsonSafe(response: Response) {
   try {
@@ -133,11 +134,34 @@ async function checkGemini(apiKey: string) {
   throw withStatus(new Error(message), response.status);
 }
 
+async function checkOpenRouter(apiKey: string) {
+  const base = OPENROUTER_BASE_URL.replace(/\/$/, "");
+  const response = await fetch(`${base}/api/v1/models`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  if (response.ok) {
+    return;
+  }
+
+  const payload = await fetchJsonSafe(response);
+  const message =
+    payload?.error?.message ||
+    payload?.error ||
+    `OpenRouter responded with status ${response.status}`;
+
+  throw withStatus(new Error(message), response.status);
+}
+
 const PROVIDER_CHECKERS: Record<Provider, (apiKey: string) => Promise<void>> = {
   openai: checkOpenAI,
   anthropic: checkAnthropic,
   xai: checkXAI,
   gemini: checkGemini,
+  openrouter: checkOpenRouter,
 };
 
 export async function POST(request: Request) {
@@ -156,7 +180,7 @@ export async function POST(request: Request) {
 
     const normalizedProvider = provider.toLowerCase();
 
-    if (!["openai", "anthropic", "xai", "gemini"].includes(normalizedProvider)) {
+    if (!["openai", "anthropic", "xai", "gemini", "openrouter"].includes(normalizedProvider)) {
       return NextResponse.json(
         { ok: false, error: "Unsupported provider." },
         { status: 400 }
