@@ -1,0 +1,1 @@
+- stop running npm run build. npm run dev is already active

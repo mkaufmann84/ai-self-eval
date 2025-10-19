@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const NAV_LINKS = [
   { href: "/analysis", label: "Analysis" },
   { href: "/convo-tree", label: "Convo Tree" },
+  { href: "/rollouts", label: "Rollouts" },
   { href: "/settings", label: "Settings" },
 ];
 
