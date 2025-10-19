@@ -13,7 +13,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "next-themes";
-import type { ConversationOption } from "../_shared/definitions";
+import type { ConversationOption } from "../definitions";
 
 interface OptionEvaluation {
   optionId: string;

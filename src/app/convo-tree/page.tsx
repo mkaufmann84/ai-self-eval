@@ -55,21 +55,21 @@ import type {
   ConversationNode,
   ConversationTree,
   PathStep,
-} from "../_shared/definitions";
-import { ROOT_KEY } from "../_shared/definitions";
+} from "./definitions";
+import { ROOT_KEY } from "./definitions";
 import {
   buildConversationTree,
   computeFollowUpDepth,
   buildPath,
   collectTurnsUpToDepth,
-} from "../_shared/tree-logic";
+} from "./tree-logic";
 import {
   getNodeKey,
   friendlyRoleLabel,
   nextRole,
   generateRunId,
   turnsEqual,
-} from "../_shared/utils";
+} from "./utils";
 import { EvaluationDialog } from "./components/EvaluationDialog";
 
 const sampleRuns: ConversationRun[] = [
