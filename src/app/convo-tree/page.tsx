@@ -368,7 +368,6 @@ export default function ConvoTreePage() {
       return runsEqual(prev, sanitized) ? prev : sanitized;
     });
   }, []);
-  const [showMeta, setShowMeta] = useState(true);
   const [generatingMap, setGeneratingMap] = useState<Record<string, number>>({});
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>(
     undefined
@@ -532,7 +531,6 @@ export default function ConvoTreePage() {
 
   const path = useMemo(() => buildPath(tree, selectedMap), [tree, selectedMap]);
 
-  const handleToggleMeta = () => setShowMeta((prev) => !prev);
   const handleReset = () => {
     pendingRunSelection.current = null;
     setRuns([]);
@@ -987,13 +985,6 @@ export default function ConvoTreePage() {
         <Button size="sm" onClick={handleLoadExample}>
           Load example convo
         </Button>
-        <Button
-          size="sm"
-          variant={showMeta ? "default" : "outline"}
-          onClick={handleToggleMeta}
-        >
-          {showMeta ? "Hide meta" : "Show meta"}
-        </Button>
       </div>
 
       <div className="space-y-4">
@@ -1174,7 +1165,6 @@ export default function ConvoTreePage() {
                 selectedOption={step.selectedOption}
                 index={index}
                 total={path.length}
-                showMeta={showMeta}
                 followUpDepthMap={followUpDepthMap}
                 onSelectOption={handleSelectOption}
                 onAddOption={handleAddOption}
@@ -1217,7 +1207,6 @@ interface ConversationNodeCardProps {
   selectedOption: ConversationOption | null;
   index: number;
   total: number;
-  showMeta: boolean;
   followUpDepthMap: Map<string, number>;
   onSelectOption: (node: ConversationNode, option: ConversationOption) => void;
   onAddOption: (
@@ -1262,7 +1251,6 @@ function ConversationNodeCard({
   selectedOption,
   index,
   total,
-  showMeta,
   followUpDepthMap,
   onSelectOption,
   onAddOption,
