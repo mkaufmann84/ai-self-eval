@@ -72,6 +72,12 @@ import {
   hashContent,
 } from "./utils";
 import { EvaluationDialog } from "./components/EvaluationDialog";
+import {
+  exportToJSON,
+  importFromJSON,
+  downloadJSON,
+  readFileAsText,
+} from "./export-import";
 
 const sampleRuns: ConversationRun[] = [
   {
@@ -395,6 +401,7 @@ export default function ConvoTreePage() {
     },
   ]);
   const generateConfigIdRef = useRef(1);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [generateTemperature, setGenerateTemperature] = useState<number>(
     DEFAULT_GENERATE_TEMPERATURE
   );
@@ -534,6 +541,52 @@ export default function ConvoTreePage() {
   const handleLoadExample = () => {
     setRuns(sampleRuns);
     clearPresetSelection();
+  };
+
+  const handleExport = () => {
+    try {
+      const jsonString = exportToJSON(runs, ROOT_KEY);
+      downloadJSON(jsonString);
+    } catch (error) {
+      console.error("Failed to export conversation", error);
+      alert("Failed to export conversation. Check console for details.");
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const file = fileInputRef.current?.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      const jsonString = await readFileAsText(file);
+      const newRuns = importFromJSON(jsonString, runs);
+
+      if (newRuns.length === 0) {
+        alert("No new conversations found in the imported file.");
+        return;
+      }
+
+      setRuns((prev) => [...prev, ...newRuns]);
+      alert(
+        `Successfully imported ${newRuns.length} new conversation${
+          newRuns.length === 1 ? "" : "s"
+        }.`
+      );
+    } catch (error) {
+      console.error("Failed to import conversation", error);
+      alert(
+        `Failed to import conversation: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    } finally {
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   const handleAddOption = (
@@ -990,6 +1043,28 @@ export default function ConvoTreePage() {
         <Button size="sm" onClick={handleLoadExample}>
           Load example convo
         </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExport}
+          disabled={runs.length === 0}
+        >
+          Export
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Import
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json"
+          onChange={handleImport}
+          style={{ display: "none" }}
+        />
       </div>
 
       <div className="space-y-4">
