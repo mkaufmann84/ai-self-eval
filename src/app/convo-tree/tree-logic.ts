@@ -6,7 +6,7 @@ import type {
   RunTurn,
 } from "./definitions";
 import { ROOT_KEY } from "./definitions";
-import { getNodeKey } from "./utils";
+import { getNodeKey, hashContent } from "./utils";
 
 export function buildConversationTree(
   runs: ConversationRun[],
@@ -52,8 +52,9 @@ export function buildConversationTree(
 
       let option = node.options.find((opt) => opt.content === turn.content);
       if (!option) {
+        const contentHash = hashContent(turn.content);
         option = {
-          id: `${node.id}-opt-${node.options.length}`,
+          id: `${node.id}-opt-${contentHash}`,
           content: turn.content,
           runIds: [],
           models: [],

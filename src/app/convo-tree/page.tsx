@@ -69,6 +69,7 @@ import {
   nextRole,
   generateRunId,
   turnsEqual,
+  hashContent,
 } from "./utils";
 import { EvaluationDialog } from "./components/EvaluationDialog";
 
@@ -496,49 +497,41 @@ export default function ConvoTreePage() {
   }, [tree]);
 
   const [selectedMap, setSelectedMap] = useState<Record<string, string>>({});
-  const pendingRunSelection = useRef<string | null>(null);
 
   useEffect(() => {
     setSelectedMap((prev) => {
-      const next: Record<string, string> = {};
+      let hasChanges = false;
+      const next = { ...prev };
+
+      // Validation-only: fill missing selections, keep existing valid ones
       tree.layers.forEach((layer) => {
         layer.forEach((node) => {
           const currentSelectionId = prev[node.id];
-          let selectedOption =
-            node.options.find((opt) => opt.id === currentSelectionId) ?? null;
+          const isValidSelection = node.options.some(
+            (opt) => opt.id === currentSelectionId
+          );
 
-          if (!selectedOption && pendingRunSelection.current) {
-            selectedOption =
-              node.options.find((opt) =>
-                opt.runIds.includes(pendingRunSelection.current as string)
-              ) ?? null;
-          }
-
-          if (!selectedOption && node.options[0]) {
-            selectedOption = node.options[0];
-          }
-
-          if (selectedOption) {
-            next[node.id] = selectedOption.id;
+          // Only set selection if missing or invalid
+          if (!isValidSelection && node.options[0]) {
+            next[node.id] = node.options[0].id;
+            hasChanges = true;
           }
         });
       });
 
-      pendingRunSelection.current = null;
-      return next;
+      // Only return new object if something actually changed
+      return hasChanges ? next : prev;
     });
   }, [tree]);
 
   const path = useMemo(() => buildPath(tree, selectedMap), [tree, selectedMap]);
 
   const handleReset = () => {
-    pendingRunSelection.current = null;
     setRuns([]);
     setSelectedMap({});
     clearPresetSelection();
   };
   const handleLoadExample = () => {
-    pendingRunSelection.current = null;
     setRuns(sampleRuns);
     clearPresetSelection();
   };
@@ -576,20 +569,22 @@ export default function ConvoTreePage() {
     }
 
     const newRunId = generateRunId();
-    pendingRunSelection.current = newRunId;
     setRuns((prev) => [...prev, { id: newRunId, turns: newTurns }]);
-    setSelectedMap((prev) => {
-      const next = { ...prev };
-      delete next[node.id];
-      return next;
-    });
+
+    // Directly set selection to new option (content-based ID)
+    const contentHash = hashContent(trimmed);
+    const newOptionId = `${node.id}-opt-${contentHash}`;
+    setSelectedMap((prev) => ({
+      ...prev,
+      [node.id]: newOptionId,
+    }));
   };
 
   const handleAddNextTurn = (
     node: ConversationNode,
     selectedOption: ConversationOption | null,
     content: string,
-    options?: { model?: string }
+    options?: { model?: string; role?: Role }
   ) => {
     const trimmed = content.trim();
     if (!trimmed || !selectedOption) {
@@ -619,14 +614,15 @@ export default function ConvoTreePage() {
       return;
     }
 
+    const turnRole = options?.role ?? nextRole(node.role);
     const newTurns: RunTurn[] = [
       ...baseTurns,
       {
-        role: nextRole(node.role),
+        role: turnRole,
         content: trimmed,
         model:
           options?.model ??
-          (nextRole(node.role) === "assistant" ? "manual" : undefined),
+          (turnRole === "assistant" ? "manual" : undefined),
       },
     ];
 
@@ -635,8 +631,16 @@ export default function ConvoTreePage() {
     }
 
     const newRunId = generateRunId();
-    pendingRunSelection.current = newRunId;
     setRuns((prev) => [...prev, { id: newRunId, turns: newTurns }]);
+
+    // Directly set selection for the new child node (content-based ID)
+    const childNodeId = getNodeKey(node.depth + 1, selectedOption.nextPrefix);
+    const contentHash = hashContent(trimmed);
+    const newOptionId = `${childNodeId}-opt-${contentHash}`;
+    setSelectedMap((prev) => ({
+      ...prev,
+      [childNodeId]: newOptionId,
+    }));
   };
 
   const handleEditNode = (
@@ -667,12 +671,14 @@ export default function ConvoTreePage() {
         return { ...run, turns };
       });
     });
-    pendingRunSelection.current = runId;
-    setSelectedMap((prev) => {
-      const next = { ...prev };
-      delete next[node.id];
-      return next;
-    });
+
+    // Update selection to new content-based ID after edit
+    const contentHash = hashContent(updatedContent);
+    const newOptionId = `${node.id}-opt-${contentHash}`;
+    setSelectedMap((prev) => ({
+      ...prev,
+      [node.id]: newOptionId,
+    }));
   };
 
   const handlePruneNode = (runIds: string[]) => {
@@ -680,7 +686,6 @@ export default function ConvoTreePage() {
       return;
     }
     setRuns((prev) => prev.filter((run) => !runIds.includes(run.id)));
-    pendingRunSelection.current = null;
     setSelectedMap({});
   };
 
@@ -1286,15 +1291,12 @@ function ConversationNodeCard({
                 {isGenerating ? "Generating…" : "Generate"}
               </Button>
             )}
-            {nextRole(node.role) === "user" && (
-              <AddMessageButton
-                label="Add user"
-                title="Add user turn"
-                description="Extend the conversation with a user message."
-                onSubmit={(value) => onAddNextTurn(node, selectedOption, value)}
-                disabled={!hasOptions || !selectedOption || isGenerating}
-              />
-            )}
+            <AddTurnDropdown
+              node={node}
+              selectedOption={selectedOption}
+              onAddNextTurn={onAddNextTurn}
+              disabled={!hasOptions || !selectedOption || isGenerating}
+            />
             {selectedOption && activeRunId && (
               <AddMessageButton
                 label="Edit"
@@ -1568,6 +1570,92 @@ function OptionSelector({
       </div>
       <ScrollBar orientation="horizontal" />
     </ScrollArea>
+  );
+}
+
+interface AddTurnDropdownProps {
+  node: ConversationNode;
+  selectedOption: ConversationOption | null;
+  onAddNextTurn: (
+    node: ConversationNode,
+    selectedOption: ConversationOption | null,
+    content: string,
+    options?: { model?: string; role?: Role }
+  ) => void;
+  disabled?: boolean;
+}
+
+function AddTurnDropdown({
+  node,
+  selectedOption,
+  onAddNextTurn,
+  disabled,
+}: AddTurnDropdownProps) {
+  const [dialogRole, setDialogRole] = useState<Role | null>(null);
+  const [value, setValue] = useState("");
+
+  const closeDialog = () => {
+    setDialogRole(null);
+    setValue("");
+  };
+
+  const handleAdd = () => {
+    const trimmed = value.trim();
+    if (!trimmed || !dialogRole) {
+      return;
+    }
+    onAddNextTurn(node, selectedOption, trimmed, { role: dialogRole });
+    closeDialog();
+  };
+
+  return (
+    <>
+      {/* Simple buttons instead of dropdown to avoid aria-hidden conflicts */}
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setDialogRole("user")}
+      >
+        Add User
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={disabled}
+        onClick={() => setDialogRole("assistant")}
+      >
+        Add Assistant
+      </Button>
+
+      <Dialog open={!!dialogRole} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Add {dialogRole === "user" ? "user" : "assistant"} turn
+            </DialogTitle>
+            <DialogDescription>
+              Extend the conversation with a {dialogRole === "user" ? "user" : "assistant"} message.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            rows={6}
+            placeholder="Type the message content..."
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button onClick={handleAdd} disabled={!value.trim()}>
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
