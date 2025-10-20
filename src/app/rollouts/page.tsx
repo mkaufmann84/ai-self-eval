@@ -1737,18 +1737,6 @@ function OptionSelector({
           const score = evaluation?.score;
           const hasScore = score !== null && score !== undefined;
 
-          // Find if this option is a rollout by checking runs
-          let cutoffIndex: number | undefined;
-          let isRollout = false;
-          for (const run of runs) {
-            const turn = run.turns[node.depth];
-            if (turn && turn.content === option.content && turn.cutoffIndex !== undefined) {
-              cutoffIndex = turn.cutoffIndex;
-              isRollout = true;
-              break;
-            }
-          }
-
           return (
             <button
               key={option.id}
@@ -1761,15 +1749,6 @@ function OptionSelector({
                   : "border-input text-foreground hover:border-primary/60"
               )}
             >
-              {/* Rollout badge */}
-              {isRollout && (
-                <div className="absolute top-2 left-2">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-700 dark:text-green-400 border border-green-500/30 font-medium">
-                    ROLLOUT
-                  </span>
-                </div>
-              )}
-
               {/* Score badge or depth badge */}
               {hasScore ? (
                 <div
@@ -1796,19 +1775,7 @@ function OptionSelector({
                   whiteSpace: "normal",
                 }}
               >
-                {cutoffIndex !== undefined ? (
-                  <>
-                    <span className="text-blue-600 dark:text-blue-400">
-                      {option.content.substring(0, cutoffIndex)}
-                    </span>
-                    <span className="text-red-500 font-bold mx-0.5">|</span>
-                    <span className="text-green-600 dark:text-green-400">
-                      {option.content.substring(cutoffIndex)}
-                    </span>
-                  </>
-                ) : (
-                  option.content
-                )}
+                {option.content}
               </span>
               {option.models.length ? (
                 <span className="text-xs text-muted-foreground whitespace-normal break-words">

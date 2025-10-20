@@ -4,7 +4,6 @@ export interface RunTurn {
   role: Role;
   content: string;
   model?: string;
-  cutoffIndex?: number; // Character index where rollout branching occurred
 }
 
 export interface ConversationRun {
@@ -18,8 +17,6 @@ export interface ConversationOption {
   runIds: string[];
   models: string[];
   nextPrefix: string;
-  isRollout?: boolean; // True if this option was created via rollout
-  parentContent?: string; // The prefix text before the rollout cutoff
 }
 
 export interface ConversationNode {
