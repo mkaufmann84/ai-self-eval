@@ -309,6 +309,7 @@ const R = ({
       setScore,
       triggerUpdate
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { resolvedTheme } = useTheme();
   const styleObj =
