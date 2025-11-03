@@ -624,13 +624,21 @@ export default function ConvoTreePage() {
     const newRunId = generateRunId();
     setRuns((prev) => [...prev, { id: newRunId, turns: newTurns }]);
 
-    // Directly set selection to new option (content-based ID)
-    const contentHash = hashContent(trimmed);
-    const newOptionId = `${node.id}-opt-${contentHash}`;
-    setSelectedMap((prev) => ({
-      ...prev,
-      [node.id]: newOptionId,
-    }));
+    // Only set selection if there isn't already a selection for this node
+    setSelectedMap((prev) => {
+      // Don't override existing selection
+      if (prev[node.id]) {
+        return prev;
+      }
+
+      // Set selection for brand new node
+      const contentHash = hashContent(trimmed);
+      const newOptionId = `${node.id}-opt-${contentHash}`;
+      return {
+        ...prev,
+        [node.id]: newOptionId,
+      };
+    });
   };
 
   const handleAddNextTurn = (
@@ -686,14 +694,23 @@ export default function ConvoTreePage() {
     const newRunId = generateRunId();
     setRuns((prev) => [...prev, { id: newRunId, turns: newTurns }]);
 
-    // Directly set selection for the new child node (content-based ID)
+    // Only set selection if there isn't already a selection for this child node
     const childNodeId = getNodeKey(node.depth + 1, selectedOption.nextPrefix);
-    const contentHash = hashContent(trimmed);
-    const newOptionId = `${childNodeId}-opt-${contentHash}`;
-    setSelectedMap((prev) => ({
-      ...prev,
-      [childNodeId]: newOptionId,
-    }));
+
+    setSelectedMap((prev) => {
+      // Don't override existing selection
+      if (prev[childNodeId]) {
+        return prev;
+      }
+
+      // Set selection for brand new node
+      const contentHash = hashContent(trimmed);
+      const newOptionId = `${childNodeId}-opt-${contentHash}`;
+      return {
+        ...prev,
+        [childNodeId]: newOptionId,
+      };
+    });
   };
 
   const handleEditNode = (
@@ -726,6 +743,7 @@ export default function ConvoTreePage() {
     });
 
     // Update selection to new content-based ID after edit
+    // (This is intentional for edits, as the edited content becomes the new selection)
     const contentHash = hashContent(updatedContent);
     const newOptionId = `${node.id}-opt-${contentHash}`;
     setSelectedMap((prev) => ({
